@@ -10,4 +10,6 @@ run-bot-server: install-requirements
 	./venv/bin/python3 mafiabot.py
 	@echo "Bot server is running."
 
+all: run-bot-server
+
 .PHONY: create-venv install-requirements run-bot-server

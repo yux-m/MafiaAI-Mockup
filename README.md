@@ -1,10 +1,21 @@
 # mafiabot
-Discord bot for mafia, implemented in python using discord.py
+Credit to [aeternalis1/mafiabot](https://github.com/aeternalis1/mafiabot). Modified based on the original code.
 
-This bot enables users to set up and play a game of mafia via text, voice, and direct messaging channels on Discord.
+## Deployment
+1. Create a new bot on Discord Developer Portal
+2. Configure the bot token in the `.env` file: 
+    - Go to Bot, reset token, and copy it
+    - Paste it in the `.env` file: `DISCORD_BOT_TOKEN={token}`
+3. Invite the bot to your server with administrator permission and top role:
+    - Go to OAuth2 and select 'bot' under 'scopes', 
+    - Select 'Administrator' under 'Bot Permissions'
+    - Copy the link and paste it in a browser to confirm the invitation
+    - Go to Server Settings - Roles and make sure the bot's role (the bot's name by default) is at the top: if not, drag it to the top
+4. Run commands in Makefile on a local or remote machine to start the bot server:
+    - `make all`
+5. Use the commands to play mafia with other members in the server (keep the bot server running)
 
-
-## Bot commands
+## Bot commands (to be updated in the future based on modifications)
 
 ### Basic
 
