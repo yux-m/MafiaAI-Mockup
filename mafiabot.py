@@ -1,12 +1,18 @@
+import asyncio
 import discord
+from dotenv import load_dotenv
 import random
 import time
-import asyncio
-from dotenv import load_dotenv
+from openai import OpenAI
 import os
+
 
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# Configure OpenAI client
+openai_client = OpenAI(base_url="https://oai.hconeai.com/v1", api_key=os.getenv("OPENAI_API_KEY"))
 
 # Define intents
 intents = discord.Intents.default()
@@ -16,16 +22,16 @@ intents.guilds = True
 intents.guild_messages = True
 intents.dm_messages = True
 
-client = discord.Client(intents=intents)
+openai = discord.Client(intents=intents)
 
 activity = discord.Game(name="m!help")
 
 
-@client.event
+@openai.event
 async def on_ready():
-    await client.change_presence(status=discord.Status.idle, activity=activity)
+    await openai.change_presence(status=discord.Status.idle, activity=activity)
 
-    for guild in client.guilds:
+    for guild in openai.guilds:
         if 'Mafia' not in [role.name for role in guild.roles]:
             await guild.create_role(name='Mafia')
         role = discord.utils.get(guild.roles, name='Mafia')
@@ -169,6 +175,25 @@ allPlayers = {}  # dictionary mapping player IDs to server they're playing in
 # player removed when m!leave
 
 
+# TODO: remove this test_gpt_joke function (just for testing openai connection)
+async def test_gpt_joke(message, word):
+    try:
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Give me a joke about {word}.",
+                }
+            ],
+            model="gpt-3.5-turbo",
+        )
+        joke = response.choices[0].message.content
+        await message.channel.send(joke)
+    except Exception as e:
+        await message.channel.send("Sorry, I couldn't generate a joke right now. Please try again later.")
+        print(e)  # For debugging
+
+
 async def death(channel, player, server):
     server.players[player].alive = 0
     if server.settings['reveal']:
@@ -215,24 +240,24 @@ async def daytime(channel, server):
         server.saves = []
         for player in server.players.values():
             if player.alive and player.role == 'normalcop':  # normal cop report
-                user = await client.fetch_user(player.id)
+                user = await openai.fetch_user(player.id)
                 if player.cur_choice is None:
                     await user.send('You inquired about nobody, and so you receive no report.')
                 else:
-                    target = await client.fetch_user(player.cur_choice.id)
+                    target = await openai.fetch_user(player.cur_choice.id)
                     await user.send('You received a report that **%s** is %s.' % (
                         target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
             elif player.alive and player.role == 'paritycop':  # parity cop report
-                user = await client.fetch_user(player.id)
+                user = await openai.fetch_user(player.id)
                 if player.cur_choice == None:
                     await user.send('You inquired about nobody, and so you receive no report.')
                 elif player.lst_choice == None:
-                    target = await client.fetch_user(player.cur_choice.id)
+                    target = await openai.fetch_user(player.cur_choice.id)
                     await user.send(
                         'Your next target will be compared to **%s**, and you will determine whether their alignments are the same or not.' % target.name)
                 else:
-                    lst = await client.fetch_user(player.lst_choice.id)
-                    cur = await client.fetch_user(player.cur_choice.id)
+                    lst = await openai.fetch_user(player.lst_choice.id)
+                    cur = await openai.fetch_user(player.cur_choice.id)
                     if [player.lst_choice.role, player.cur_choice.role].count(
                             'mafia') == 1 or player.lst_choice.role != player.cur_choice.role:
                         await user.send('You received a report that **%s** and **%s** are of different alignments.' % (
@@ -289,7 +314,7 @@ async def daytime(channel, server):
         if votes.count(vote) > len(votes) / 2:
             lynch = vote
 
-    if lynch == None or lynch == client.user.id:
+    if lynch == None or lynch == openai.user.id:
         await channel.send('The townspeople have decided to lynch nobody.')
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
@@ -316,27 +341,27 @@ async def get_options(player, server):
             continue
         if player.role == 'doctor' and p == player.lst_choice:
             continue
-        user = await client.fetch_user(p.id)
+        user = await openai.fetch_user(p.id)
         player.options.append([len(player.options), user, p])
 
 
 async def output_options(player, server):
-    user = await client.fetch_user(player.id)
+    user = await openai.fetch_user(player.id)
     await user.send(options_text[player.role])
     await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in player.options]))
 
 
 async def maf_options(mafias, server):
-    options = [[0, client.user, 'no-kill']]
+    options = [[0, openai.user, 'no-kill']]
     for player in server.players.values():
         if player.alive and player.role != 'mafia':
-            options.append([len(options), await client.fetch_user(player.id), player])
+            options.append([len(options), await openai.fetch_user(player.id), player])
     for player in mafias:
         player.options = options
-        user = await client.fetch_user(player.id)
+        user = await openai.fetch_user(player.id)
         if len(mafias) > 1:
             await user.send('The other remaining mafia are:\n' + '\n'.join(
-                ['**%s**' % (await client.fetch_user(mafia.id)).name for mafia in mafias if mafia != player]))
+                ['**%s**' % (await openai.fetch_user(mafia.id)).name for mafia in mafias if mafia != player]))
             await user.send(
                 'You will be notified of their votes regarding whom to kill. If a majority is not reached by daytime, nobody will be targeted.')
         else:
@@ -347,7 +372,7 @@ async def maf_options(mafias, server):
 
 
 async def m_ncop(player, server, choice):
-    user = await client.fetch_user(player.id)
+    user = await openai.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send(
         'You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
@@ -355,13 +380,13 @@ async def m_ncop(player, server, choice):
 
 
 async def m_pcop(player, server, choice):
-    user = await client.fetch_user(player.id)
+    user = await openai.fetch_user(player.id)
     target = player.options[choice][1].name
     if not player.lst_choice:
         await user.send(
             'You have selected **%s** as the target of your investigation. Remember that you will not recieve a report in the morning, as you are a parity cop.' % target)
     else:
-        lst = await client.fetch_user(player.lst_choice.id)
+        lst = await openai.fetch_user(player.lst_choice.id)
         await user.send(
             'You have selected **%s** as the target of your investigation, to be compared to **%s**. You will recieve a report in the morning.' % (
                 target, lst.name))
@@ -369,7 +394,7 @@ async def m_pcop(player, server, choice):
 
 
 async def m_doc(player, server, choice):
-    user = await client.fetch_user(player.id)
+    user = await openai.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send(
         'You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
@@ -377,7 +402,7 @@ async def m_doc(player, server, choice):
 
 
 async def m_maf(player, server, choice):
-    user = await client.fetch_user(player.id)
+    user = await openai.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send('You have selected **%s** as your target to kill.' % target)
 
@@ -393,12 +418,12 @@ async def m_maf(player, server, choice):
         await user.send('There is presently a majority vote to no-kill.')
     else:
         await user.send(
-            'There is presently a majority vote to kill **%s**.' % (await client.fetch_user(maj.id)).name)
+            'There is presently a majority vote to kill **%s**.' % (await openai.fetch_user(maj.id)).name)
 
     for p in server.players.values():
         if p == player or p.role != 'mafia' or not p.alive:
             continue
-        maf_user = await client.fetch_user(p.id)
+        maf_user = await openai.fetch_user(p.id)
         await maf_user.send('**%s** has selected **%s** as their target to kill.' % (user.name, target))
         if maj == None:
             await user.send('There is presently no majority in your votes.')
@@ -406,7 +431,7 @@ async def m_maf(player, server, choice):
             await user.send('There is presently a majority vote to no-kill.')
         else:
             await user.send(
-                'There is presently a majority vote to kill **%s**.' % (await client.fetch_user(maj.id)).name)
+                'There is presently a majority vote to kill **%s**.' % (await openai.fetch_user(maj.id)).name)
 
 
 pr_funcs = {
@@ -514,7 +539,7 @@ async def m_start(message, author, server):
     for player in server.players.values():
         role = allRoles.pop()
         player.role = role
-        user = await client.fetch_user(player.id)
+        user = await openai.fetch_user(player.id)
         await user.send('Your role is `%s`.' % role)
 
     # resetting player variables
@@ -684,7 +709,7 @@ async def m_vote(message, author, server):
     tar = query[1]
     try:
         if len(tar) <= 3 or tar[:2] != '<@' or tar[-1] != '>' or (
-                int(tar[2:-1]) != client.user.id and int(tar[2:-1]) not in server.players) or (
+                int(tar[2:-1]) != openai.user.id and int(tar[2:-1]) not in server.players) or (
                 int(tar[2:-1]) in server.players and not server.players[int(tar[2:-1])].alive):
             await message.channel.send(
                 'That is an invalid voting target. Vote in the form `m!vote @user`, where user is a living player.')
@@ -723,7 +748,7 @@ async def m_status(message, author, server):
     for player in server.players.values():
         if not player.alive:
             continue
-        if player.vote == client.user.id:
+        if player.vote == openai.user.id:
             msg.append('<@%s> is currently voting for a no-lynch.' % str(player.id))
         elif player.vote == None:
             msg.append('<@%s> is currently voting for nobody.' % str(player.id))
@@ -747,7 +772,7 @@ async def m_status(message, author, server):
             msg.append(str(i) + ' vote(s) on: ' + ', '.join(['<@%s>' % str(key) for key in count2[i]]))
 
     msg.append('No lynch: %d vote(s)' % sum(
-        [player.vote == client.user.id for player in server.players.values() if player.alive]))
+        [player.vote == openai.user.id for player in server.players.values() if player.alive]))
     msg.append('Nobody: %d vote(s)' % sum([player.vote == None for player in server.players.values() if player.alive]))
     await message.channel.send('\n'.join([line for line in msg]))
 
@@ -843,7 +868,7 @@ dm_funcs = [
 ]
 
 
-@client.event
+@openai.event
 async def on_message(message):
     print('Message received: ' + message.content)
     # await message.channel.send('Received a message in this thread!')
@@ -858,10 +883,22 @@ async def on_message(message):
         if server.running and not server.phase and player.alive and player.role in power_roles:
             await check_action(player, server, message)
 
-    if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
+    if message.author == openai.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
 
     query = message.content[2:].split()
+
+    # TODO: remove below
+    # just for testing gpt connection
+    if message.content.startswith('m!testgpt!'):
+        word = message.content.split('m!testgpt!', 1)[1]  # Extract the word
+        if word:  # If there's a word provided, generate and send back a joke
+            await test_gpt_joke(message, word)
+        else:
+            await message.channel.send("Please provide a word for me to joke about. Use the format m!testgpt!{word}")
+        return
+    # TODO: remove above
+
     if len(query) and query[0] in commands:
         print('Command received: ' + query[0])
         if message.channel.type == discord.ChannelType.private and query[0] not in dm_funcs:
@@ -874,7 +911,7 @@ async def on_message(message):
         await invalid(message, servers[message.guild])
 
 
-client.run(DISCORD_BOT_TOKEN)
+openai.run(DISCORD_BOT_TOKEN)
 
 '''
 REMEMBER TO REMOVE TOKEN WHEN COMMITTING

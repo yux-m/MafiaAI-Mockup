@@ -3,9 +3,14 @@ Credit to [aeternalis1/mafiabot](https://github.com/aeternalis1/mafiabot). Modif
 
 ## Deployment
 1. Create a new bot on Discord Developer Portal
-2. Configure the bot token in the `.env` file: 
-    - Go to Bot, reset token, and copy it
-    - Paste it in the `.env` file: `DISCORD_BOT_TOKEN={token}`
+2. Configure credentials: 
+    - Bot token:
+      - Enter the app page for the bot from [My Applications](https://discord.com/developers/applications)
+      - Go to Bot, reset token, and copy it
+      - Paste it in the `.env` file: `DISCORD_BOT_TOKEN={token}`
+    - OpenAI API key:
+      - Go to [OpenAI Playground](https://platform.openai.com/api-keys), create an API key, and copy it
+      - Paste it in the `.env` file: `OPENAI_API_KEY={key}`
 3. Invite the bot to your server with administrator permission and top role:
     - Go to OAuth2 and select 'bot' under 'scopes', 
     - Select 'Administrator' under 'Bot Permissions'

@@ -1,15 +1,16 @@
-create-venv:
+venv:
 	python3 -m venv venv
 	@echo "Virtual environment created."
 
-install-requirements: create-venv
-	./venv/bin/pip install -r requirements.txt
+install:
+	python3 -m pip install --upgrade pip
+	pip install -r requirements.txt
 	@echo "Requirements installed."
 
-run-bot-server: install-requirements
-	./venv/bin/python3 mafiabot.py
+run-bot: venv install
+	python3 mafiabot.py
 	@echo "Bot server is running."
 
-all: run-bot-server
+all: venv install run-bot
 
-.PHONY: create-venv install-requirements run-bot-server
+.PHONY: venv install run-bot
