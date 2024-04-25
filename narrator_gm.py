@@ -3,7 +3,7 @@ import discord
 from dotenv import load_dotenv
 import random
 import time
-from discord_client import OpenAI
+from openai import OpenAI
 import os
 
 
