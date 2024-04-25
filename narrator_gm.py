@@ -206,7 +206,8 @@ async def gpt_query(message, messages):
                 messages= messages,
                 model="gpt-3.5-turbo",
             )
-        await message.channel.send(response.choices[0].message.content)
+        return response.choices[0].message.content
+        # await message.channel.send(response.choices[0].message.content)
     except Exception as e:
         await message.channel.send("Unable to generate description")
         print(e)  # For debugging
@@ -216,7 +217,7 @@ async def dalle_query(message, input_text):
         response = openai_client.images.generate(
             model="dall-e-3",
             prompt=input_text,
-            size="1024x1024",
+            size="1792x1024",
             quality="standard",
             n=1,
         )
@@ -619,6 +620,8 @@ async def m_start(message, author, server):
 
     random.shuffle(allRoles)
 
+    await message.channel.send("*----------------NEW MAFIAI GAME SESSION STARTED🕵️🕹️----------------*")
+
     setting = await gpt_query(message, messages=[
         {
         "role": "system",
@@ -626,26 +629,27 @@ async def m_start(message, author, server):
         },
         {
         "role": "user",
-        "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
+        "content": "Generate a scenic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention violence. Do NOT mention any plot. Limit 100 words."
         },
     ],);
-
     await message.channel.send(setting)
     server.background = setting
-
-    image = await dalle_query(message, setting)
-    await message.channel.send(image)
+    image = await dalle_query(message, "Generate an evocative image for the following video game setting: " + setting)
 
     for player in server.players.values():
         role = allRoles.pop()
         player.role = role
         user = await discord_client.fetch_user(player.id)
+        await user.send('*----------------NEW MAFIAI GAME SESSION STARTED🕵️🕹️----------------*')
+        await user.send('Welcome to MafiAI!')
         await user.send('Your role is `%s`.' % role)
         # Ask for character descriptions for potential use in murder scene
         if server.narration:
-            await user.send('Please send a short description of your character.')
+            await user.send('Please input a VERY short description of your character in this town (i.e old man, fisherman, janitor, butcher etc). This will be public to all players, so do not reveal your identity.')
             response = await discord_client.wait_for('message', check=lambda m: m.author == user)
             server.players[player.id].description = response.content
+
+    await message.channel.send("*----------------STARRING⭐️----------------*")
 
     # resetting player variables
     for player in server.players.values():
@@ -653,10 +657,12 @@ async def m_start(message, author, server):
         player.lst_choice = None
         player.vote = None
         player.alive = 1
+        await message.channel.send('Player <@%s>' % str(player.id))
+        player_image = await dalle_query(message, f"You generate game art. Depict a player with the following description: {player.description}. The setting of the player is {setting}")
 
     server.running = 1
     server.round = 0
-    await message.channel.send('The game has begun!')
+    await message.channel.send('*----------------THE GAME HAS BEGUN🎬----------------*')
     if server.settings['daystart']:
         await daytime(message.channel, server)
     else:
