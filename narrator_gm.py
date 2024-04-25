@@ -502,12 +502,10 @@ async def nighttime(channel, server):
 
     # villagers' voting for the night weapon - so that everyone is typing something at night
     if any(player.role == 'villager' and player.alive for player in server.players.values()):
-        await channel.send('Please vote for tonight\'s weapon:')
         weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
-        for i, weapon in enumerate(weapons):
-            await channel.send(f'{i + 1}. {weapon}')
-        responses = await collect_votes(server, weapons)
+        responses = await collect_votes(server, weapons, channel)
         server.night_weapon = max(set(responses), key=responses.count) if responses else random.choice(weapons)
+        await channel.send(f'Tonight\'s weapon of choice is: {server.night_weapon}')
     else:
         server.night_weapon = random.choice(['knife', 'gun', 'poison', 'rope', 'bare hands'])
 
@@ -541,9 +539,14 @@ async def collect_votes(server, options):
     for player in server.players.values():
         if player.role == 'villager' and player.alive:
             user = await discord_client.fetch_user(player.id)
-            await user.send('Please select the number corresponding to your choice of weapon for tonight:')
+            dm_channel = user.dm_channel or await user.create_dm()
+            await dm_channel.send('Please select the number corresponding to your choice of weapon for tonight:')
+            for i, weapon in enumerate(options):
+                await dm_channel.send(f'{i + 1}. {weapon}')
             try:
-                response = await discord_client.wait_for('message', timeout=60.0)
+                response = await discord_client.wait_for('message',
+                                                         check=lambda m: m.author == user and m.channel == dm_channel,
+                                                         timeout=60.0)
                 if response.content.isdigit() and 1 <= int(response.content) <= len(options):
                     responses.append(options[int(response.content) - 1])
             except asyncio.TimeoutError:
