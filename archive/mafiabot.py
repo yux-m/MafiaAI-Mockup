@@ -9,9 +9,7 @@ import os
 
 
 load_dotenv()
-# DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
-DISCORD_BOT_TOKEN=os.getenv('DISCORD_BOT_TOKEN')
-
+DISCORD_BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # Configure OpenAI client
@@ -141,15 +139,8 @@ class PredictorAI:
 
         # Keep track of the world facts
         self.world_facts = []
-        # { 1: {
-        #     'bot': "description",
-        #     "conversation:": ['kalen': ' i think _- did it', 'melanie': 'i think _- did it'],
-        #     }
-         
-        # }
+
         self.round_descriptions = {} # 0: [[' hey what's  up hello'], [' hey what's  up hello'], [' hey what's  up hello']]
-
-
         self.predictions = [] # A list of predictions after each .round.
 
 
@@ -171,8 +162,6 @@ class Player:
 class Server:
     def __init__(self):
         self.players = {}  # dictionary mapping player IDs to a Player class
-        #TODO 
-        self.id_to_player = {} # dictionary mapping player IDs to a Player name
         self.running = 0
         self.phase = 0  # 0 for night, 1 for day
         self.actions = 0  # how many actions remain during nighttime
@@ -241,8 +230,6 @@ async def death(channel, player, server):
 
 async def game_end(channel, winner, server):  # end of game message (role reveal, congratulation of winners)
     server.running = 0
-    output = await m_endgame(server)
-    await channel.send(output)
     await channel.send('\n'.join(
         [end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in
                                                                server.players.values()]))
@@ -278,7 +265,6 @@ async def daytime(channel, server):
         server.round += 1
 
     if not (server.settings['daystart'] and server.round == 1):  # night actions were taken
-
         server.saves = []
         for player in server.players.values():
             if player.alive and player.role == 'normalcop':  # normal cop report
@@ -322,25 +308,15 @@ async def daytime(channel, server):
             await channel.send('<@%s> has been killed in the night!' % str(kill.id))
             await death(channel, kill.id, server)
             #TODO Insert in predictorAI knowledge that player has been killed. 
-            # print("Server round:", server.round)
-            # print("Server players:", server.id_to_player)
-            # print("Player who died:", server.players[kill.id])
-            print("Player who died:", server.id_to_player[kill.id])
             server.predictorAI.deaths.append((server.round, server.players[kill.id])) # (Round, Player Object)
-            server.predictorAI.world_facts.append((server.round, 'Player %s has been killed.' % server.id_to_player[kill.id]))
+            server.predictorAI.world_facts.append((server.round, 'Player %s has been killed.' % kill.id))
             server.predictorAI.players.pop(kill.id) 
-            # print("world facts:", server.predictorAI.world_facts)
-            
-            output = await m_predict1(server)
-            await channel.send(output)
-            # await channel.send(output)
 
             if await check_end(channel, server):
                 return
         else:
             await channel.send('It was a quiet night, without any deaths.')
-            output = await m_predict1(server)
-            await channel.send(output)
+            await channel.send(m_predict(server.predictorAI))
             # Make a prediction here. Maybe something along the lines of 'predictorAI predicts that the mafia is X.'
 
     await channel.send(
@@ -622,7 +598,7 @@ async def m_start(message, author, server):
     # Initialize the predictorAI object with the current players.
     predictor = PredictorAI(server.players)
     server.predictorAI = predictor
-    # print("PredictorAI players:", predictor.players)
+    print("PredictorAI players:", predictor.players)
 
     await message.channel.send('The game has begun!')
     if server.settings['daystart']:
@@ -738,7 +714,6 @@ async def m_join(message, author, server):
         allPlayers[author] = message.guild
         server.players[author] = Player(author, server)
         # TODO 
-        server.id_to_player[author] = message.author.name
         # server.predictorAI.characters[author] = Player(author, server) # Maybe not the best idea because it contains the entire player's object.
         # server.predictorAI.current_players.append(author)
         # print("Author:", author)
@@ -922,6 +897,7 @@ async def m_time(message, author, server):
                 int(server.time) / 60, int(server.time) % 60))
 
 async def m_predict(message, author, server):
+
     if not server.running:
         await message.channel.send('There is no ongoing game. Please start a game first.')
         # print("out here")
@@ -953,63 +929,6 @@ async def m_predict(message, author, server):
             print(e)  # For debugging
             # return "Sorry, I can't make a prediction right now. Please try again later."
             await message.channel.send("Sorry, I can't make a prediction right now. Please try again later.")
-
-async def m_predict1(server):
-    if not server.running:
-        print("out here")
-        return
-    else:
-        # print("In here")
-        if not server.predictorAI:
-            return
-        print("in here")
-        try:
-            response = openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": f"You are an analyzer who predicts who the current mafia player is. You have access to the following information: {server.predictorAI.world_facts}, which tells you what happened after every round. The current players in the game are: {server.id_to_player.values()}. Make a strong prediction on who the mafia player is and explain logically how you came to this conclusion. If any of the variables are missing, please make a prediction based on the information you have. Predict the player and explain why."
-                    }
-                ],
-                temperature=1,
-                max_tokens=256,
-                top_p=1
-            )
-            result = response.choices[0].message.content
-            # print("predictorAI response:", result)
-            # await message.channel.send("Here we go again:", result)
-            # await message.channel.send(result)
-    
-            return result
-        except Exception as e:
-            print(e)  # For debugging
-            # return "Sorry, I can't make a prediction right now. Please try again later."
-            # await message.channel.send("Sorry, I can't make a prediction right now. Please try again later.")
-            return "Sorry, I can't make a prediction right now. Please try again later."
-        
-
-async def m_endgame(server):
-    hi = server
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": f" The game has ended. Who was the mafia player? Did you predict correctly? If so, explain how you came to this conclusion. If not, explain why you were wrong. What could you have done differently to make a better prediction?"
-                }
-            ],
-            temperature=1,
-            max_tokens=256,
-            top_p=1
-        )
-        result = response.choices[0].message.content
-        return result
-    except Exception as e:
-        print(e)  # For debugging
-        return "Sorry, I can't make a prediction right now. Please try again later."
-
 
 
 async def m_testState(message, author, server):
