@@ -3,7 +3,7 @@ import discord
 from dotenv import load_dotenv
 import random
 import time
-from discord_client import OpenAI
+from openai import OpenAI
 import os
 
 
@@ -167,6 +167,7 @@ class Server:
         }
         self.night_weapon = 'knife'
         self.narration = True
+        self.background = ''
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -196,6 +197,18 @@ async def test_gpt_joke(message, word):
         await message.channel.send(joke)
     except Exception as e:
         await message.channel.send("Sorry, I couldn't generate a joke right now. Please try again later.")
+        print(e)  # For debugging
+
+
+async def gpt_query(message, messages):
+    try:
+        response = openai_client.chat.completions.create(
+                messages= messages,
+                model="gpt-3.5-turbo",
+            )
+        await message.channel.send(response.choices[0].message.content)
+    except Exception as e:
+        await message.channel.send("Unable to generate description")
         print(e)  # For debugging
 
 
@@ -588,6 +601,20 @@ async def m_start(message, author, server):
         allRoles = allRoles + [key] * server.setup[key]
 
     random.shuffle(allRoles)
+
+    setting = await gpt_query(message, messages=[
+        {
+        "role": "system",
+        "content": "You are a game master for a game of Mafia"
+        },
+        {
+        "role": "user",
+        "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
+        },
+    ],);
+
+    await message.channel.send(setting)
+    server.background = setting
 
     for player in server.players.values():
         role = allRoles.pop()
