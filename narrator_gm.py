@@ -167,6 +167,7 @@ class Server:
         }
         self.night_weapon = 'knife'
         self.narration = True
+        self.background = '19th century village'    # todo: use it in gathering character descriptions and crime scene generation
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
