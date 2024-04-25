@@ -3,7 +3,7 @@ import discord
 from dotenv import load_dotenv
 import random
 import time
-from openai import OpenAI
+from discord_client import OpenAI
 import os
 
 
@@ -15,23 +15,24 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 openai_client = OpenAI(base_url="https://oai.hconeai.com/v1", api_key=os.getenv("OPENAI_API_KEY"))
 
 # Define intents
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
-intents.guilds = True
-intents.guild_messages = True
-intents.dm_messages = True
+intents = discord.Intents.all()
+# intents = discord.Intents.default()
+# intents.messages = True
+# intents.message_content = True
+# intents.guilds = True
+# intents.guild_messages = True
+# intents.dm_messages = True
 
-openai = discord.Client(intents=intents)
+discord_client = discord.Client(intents=intents)
 
 activity = discord.Game(name="m!help")
 
 
-@openai.event
+@discord_client.event
 async def on_ready():
-    await openai.change_presence(status=discord.Status.idle, activity=activity)
+    await discord_client.change_presence(status=discord.Status.idle, activity=activity)
 
-    for guild in openai.guilds:
+    for guild in discord_client.guilds:
         if 'Mafia' not in [role.name for role in guild.roles]:
             await guild.create_role(name='Mafia')
         role = discord.utils.get(guild.roles, name='Mafia')
@@ -68,7 +69,8 @@ commands = {
     'players': '`m!players` displays all players who are currently alive',
     'alive': '`m!alive` displays all the roles and their quantities that are still in play.',
     'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).',
-    'time': '`m!time` displays the amount of time left, before the day or night ends.'
+    'time': '`m!time` displays the amount of time left, before the day or night ends.',
+    'narration': '`m!narration` toggles the narration setting'
 }
 
 help_text = [
@@ -164,6 +166,7 @@ class Server:
             'mafia': 0
         }
         self.night_weapon = 'knife'
+        self.narration = True
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -199,25 +202,26 @@ async def test_gpt_joke(message, word):
 async def death(channel, player, server):
     server.players[player].alive = 0
 
-    # Generate a description of the murder scene using GPT
-    description = server.players[player].description
-    weapon = server.night_weapon
-    prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words."
-    try:
-        response = openai_client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            model="gpt-3.5-turbo",
-        )
-        murder_scene_description = response.choices[0].message.content
-        await channel.send(murder_scene_description)
-    except Exception as e:
-        # await channel.send("Sorry, I couldn't generate a murder scene description right now. Please try again later.")
-        print(e)  # For debugging
+    if server.narration:
+        # Generate a description of the murder scene using GPT
+        description = server.players[player].description
+        weapon = server.night_weapon
+        prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words."
+        try:
+            response = openai_client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model="gpt-3.5-turbo",
+            )
+            murder_scene_description = response.choices[0].message.content
+            await channel.send(murder_scene_description)
+        except Exception as e:
+            await channel.send(f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
+            print(e)  # For debugging
 
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
@@ -263,24 +267,24 @@ async def daytime(channel, server):
         server.saves = []
         for player in server.players.values():
             if player.alive and player.role == 'normalcop':  # normal cop report
-                user = await openai.fetch_user(player.id)
+                user = await discord_client.fetch_user(player.id)
                 if player.cur_choice is None:
                     await user.send('You inquired about nobody, and so you receive no report.')
                 else:
-                    target = await openai.fetch_user(player.cur_choice.id)
+                    target = await discord_client.fetch_user(player.cur_choice.id)
                     await user.send('You received a report that **%s** is %s.' % (
                         target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
             elif player.alive and player.role == 'paritycop':  # parity cop report
-                user = await openai.fetch_user(player.id)
+                user = await discord_client.fetch_user(player.id)
                 if player.cur_choice == None:
                     await user.send('You inquired about nobody, and so you receive no report.')
                 elif player.lst_choice == None:
-                    target = await openai.fetch_user(player.cur_choice.id)
+                    target = await discord_client.fetch_user(player.cur_choice.id)
                     await user.send(
                         'Your next target will be compared to **%s**, and you will determine whether their alignments are the same or not.' % target.name)
                 else:
-                    lst = await openai.fetch_user(player.lst_choice.id)
-                    cur = await openai.fetch_user(player.cur_choice.id)
+                    lst = await discord_client.fetch_user(player.lst_choice.id)
+                    cur = await discord_client.fetch_user(player.cur_choice.id)
                     if [player.lst_choice.role, player.cur_choice.role].count(
                             'mafia') == 1 or player.lst_choice.role != player.cur_choice.role:
                         await user.send('You received a report that **%s** and **%s** are of different alignments.' % (
@@ -337,7 +341,7 @@ async def daytime(channel, server):
         if votes.count(vote) > len(votes) / 2:
             lynch = vote
 
-    if lynch == None or lynch == openai.user.id:
+    if lynch == None or lynch == discord_client.user.id:
         await channel.send('The townspeople have decided to lynch nobody.')
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
@@ -364,27 +368,27 @@ async def get_options(player, server):
             continue
         if player.role == 'doctor' and p == player.lst_choice:
             continue
-        user = await openai.fetch_user(p.id)
+        user = await discord_client.fetch_user(p.id)
         player.options.append([len(player.options), user, p])
 
 
 async def output_options(player, server):
-    user = await openai.fetch_user(player.id)
+    user = await discord_client.fetch_user(player.id)
     await user.send(options_text[player.role])
     await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in player.options]))
 
 
 async def maf_options(mafias, server):
-    options = [[0, openai.user, 'no-kill']]
+    options = [[0, discord_client.user, 'no-kill']]
     for player in server.players.values():
         if player.alive and player.role != 'mafia':
-            options.append([len(options), await openai.fetch_user(player.id), player])
+            options.append([len(options), await discord_client.fetch_user(player.id), player])
     for player in mafias:
         player.options = options
-        user = await openai.fetch_user(player.id)
+        user = await discord_client.fetch_user(player.id)
         if len(mafias) > 1:
             await user.send('The other remaining mafia are:\n' + '\n'.join(
-                ['**%s**' % (await openai.fetch_user(mafia.id)).name for mafia in mafias if mafia != player]))
+                ['**%s**' % (await discord_client.fetch_user(mafia.id)).name for mafia in mafias if mafia != player]))
             await user.send(
                 'You will be notified of their votes regarding whom to kill. If a majority is not reached by daytime, nobody will be targeted.')
         else:
@@ -395,7 +399,7 @@ async def maf_options(mafias, server):
 
 
 async def m_ncop(player, server, choice):
-    user = await openai.fetch_user(player.id)
+    user = await discord_client.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send(
         'You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
@@ -403,13 +407,13 @@ async def m_ncop(player, server, choice):
 
 
 async def m_pcop(player, server, choice):
-    user = await openai.fetch_user(player.id)
+    user = await discord_client.fetch_user(player.id)
     target = player.options[choice][1].name
     if not player.lst_choice:
         await user.send(
             'You have selected **%s** as the target of your investigation. Remember that you will not recieve a report in the morning, as you are a parity cop.' % target)
     else:
-        lst = await openai.fetch_user(player.lst_choice.id)
+        lst = await discord_client.fetch_user(player.lst_choice.id)
         await user.send(
             'You have selected **%s** as the target of your investigation, to be compared to **%s**. You will recieve a report in the morning.' % (
                 target, lst.name))
@@ -417,7 +421,7 @@ async def m_pcop(player, server, choice):
 
 
 async def m_doc(player, server, choice):
-    user = await openai.fetch_user(player.id)
+    user = await discord_client.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send(
         'You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
@@ -425,7 +429,7 @@ async def m_doc(player, server, choice):
 
 
 async def m_maf(player, server, choice):
-    user = await openai.fetch_user(player.id)
+    user = await discord_client.fetch_user(player.id)
     target = player.options[choice][1].name
     await user.send('You have selected **%s** as your target to kill.' % target)
 
@@ -441,12 +445,12 @@ async def m_maf(player, server, choice):
         await user.send('There is presently a majority vote to no-kill.')
     else:
         await user.send(
-            'There is presently a majority vote to kill **%s**.' % (await openai.fetch_user(maj.id)).name)
+            'There is presently a majority vote to kill **%s**.' % (await discord_client.fetch_user(maj.id)).name)
 
     for p in server.players.values():
         if p == player or p.role != 'mafia' or not p.alive:
             continue
-        maf_user = await openai.fetch_user(p.id)
+        maf_user = await discord_client.fetch_user(p.id)
         await maf_user.send('**%s** has selected **%s** as their target to kill.' % (user.name, target))
         if maj == None:
             await user.send('There is presently no majority in your votes.')
@@ -454,7 +458,7 @@ async def m_maf(player, server, choice):
             await user.send('There is presently a majority vote to no-kill.')
         else:
             await user.send(
-                'There is presently a majority vote to kill **%s**.' % (await openai.fetch_user(maj.id)).name)
+                'There is presently a majority vote to kill **%s**.' % (await discord_client.fetch_user(maj.id)).name)
 
 
 pr_funcs = {
@@ -496,7 +500,7 @@ async def nighttime(channel, server):
     server.actions = sum([player.alive and player.role in power_roles for player in server.players.values()])
     server.saves = []
 
-    # villagers' voting for the night weapon
+    # villagers' voting for the night weapon - so that everyone is typing something at night
     if any(player.role == 'villager' and player.alive for player in server.players.values()):
         await channel.send('Please vote for tonight\'s weapon:')
         weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
@@ -536,10 +540,10 @@ async def collect_votes(server, options):
     responses = []
     for player in server.players.values():
         if player.role == 'villager' and player.alive:
-            user = await openai.fetch_user(player.id)
+            user = await discord_client.fetch_user(player.id)
             await user.send('Please select the number corresponding to your choice of weapon for tonight:')
             try:
-                response = await openai.wait_for('message', timeout=60.0)
+                response = await discord_client.wait_for('message', timeout=60.0)
                 if response.content.isdigit() and 1 <= int(response.content) <= len(options):
                     responses.append(options[int(response.content) - 1])
             except asyncio.TimeoutError:
@@ -588,12 +592,13 @@ async def m_start(message, author, server):
     for player in server.players.values():
         role = allRoles.pop()
         player.role = role
-        user = await openai.fetch_user(player.id)
+        user = await discord_client.fetch_user(player.id)
         await user.send('Your role is `%s`.' % role)
         # Ask for character descriptions for potential use in murder scene
-        await user.send('Please send a short description of your character.')
-        response = await openai.wait_for('message', check=lambda m: m.author == user)
-        server.players[player.id].description = response.content
+        if server.narration:
+            await user.send('Please send a short description of your character.')
+            response = await discord_client.wait_for('message', check=lambda m: m.author == user)
+            server.players[player.id].description = response.content
 
     # resetting player variables
     for player in server.players.values():
@@ -619,6 +624,27 @@ async def m_end(message, author, server):  # can only end game if currently play
         await game_end(message.channel, 'None', server)
     else:
         await message.channel.send('You do not have permission to end the game!')
+
+
+async def m_narration(message, author, server):
+    current_state = "enabled" if server.narration else "disabled"
+    toggle_action = "disable" if server.narration else "enable"
+    await message.channel.send(f'Narration is currently {current_state}. Would you like to {toggle_action} it? (yes/no)')
+
+    # Check if the reply is from the same author and channel
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.lower() in ["yes", "no", "y", "n"]
+
+    try:
+        reply = await discord_client.wait_for('message', timeout=120.0, check=check)  # 30 seconds to respond
+        if reply.content.lower() == "yes" or reply.content.lower() == "y":
+            server.narration = not server.narration
+            new_state = "enabled" if server.narration else "disabled"
+            await message.channel.send(f'Narration has been {new_state}.')
+        else:
+            await message.channel.send('Narration setting unchanged.')
+    except asyncio.TimeoutError:
+        await message.channel.send('No response received. Narration setting remains unchanged.')
 
 
 async def m_roles(message, author, server):
@@ -762,7 +788,7 @@ async def m_vote(message, author, server):
     tar = query[1]
     try:
         if len(tar) <= 3 or tar[:2] != '<@' or tar[-1] != '>' or (
-                int(tar[2:-1]) != openai.user.id and int(tar[2:-1]) not in server.players) or (
+                int(tar[2:-1]) != discord_client.user.id and int(tar[2:-1]) not in server.players) or (
                 int(tar[2:-1]) in server.players and not server.players[int(tar[2:-1])].alive):
             await message.channel.send(
                 'That is an invalid voting target. Vote in the form `m!vote @user`, where user is a living player.')
@@ -801,7 +827,7 @@ async def m_status(message, author, server):
     for player in server.players.values():
         if not player.alive:
             continue
-        if player.vote == openai.user.id:
+        if player.vote == discord_client.user.id:
             msg.append('<@%s> is currently voting for a no-lynch.' % str(player.id))
         elif player.vote == None:
             msg.append('<@%s> is currently voting for nobody.' % str(player.id))
@@ -825,7 +851,7 @@ async def m_status(message, author, server):
             msg.append(str(i) + ' vote(s) on: ' + ', '.join(['<@%s>' % str(key) for key in count2[i]]))
 
     msg.append('No lynch: %d vote(s)' % sum(
-        [player.vote == openai.user.id for player in server.players.values() if player.alive]))
+        [player.vote == discord_client.user.id for player in server.players.values() if player.alive]))
     msg.append('Nobody: %d vote(s)' % sum([player.vote == None for player in server.players.values() if player.alive]))
     await message.channel.send('\n'.join([line for line in msg]))
 
@@ -911,7 +937,8 @@ to_func = {
     'players': m_players,
     'alive': m_alive,
     'dead': m_dead,
-    'time': m_time
+    'time': m_time,
+    'narration': m_narration
 }
 
 dm_funcs = [
@@ -921,7 +948,7 @@ dm_funcs = [
 ]
 
 
-@openai.event
+@discord_client.event
 async def on_message(message):
     print('Message received: ' + message.content)
     # await message.channel.send('Received a message in this thread!')
@@ -936,7 +963,7 @@ async def on_message(message):
         if server.running and not server.phase and player.alive and player.role in power_roles:
             await check_action(player, server, message)
 
-    if message.author == openai.user or len(message.content) < 2 or message.content[:2] != 'm!':
+    if message.author == discord_client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
 
     query = message.content[2:].split()
@@ -964,7 +991,7 @@ async def on_message(message):
         await invalid(message, servers[message.guild])
 
 
-openai.run(DISCORD_BOT_TOKEN)
+discord_client.run(DISCORD_BOT_TOKEN)
 
 '''
 REMEMBER TO REMOVE TOKEN WHEN COMMITTING

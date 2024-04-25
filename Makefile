@@ -7,8 +7,12 @@ install:
 	pip install -r requirements.txt
 	@echo "Requirements installed."
 
-run-bot: venv install
+run-mafia-bot: venv install
 	python3 mafiabot.py
+	@echo "Bot server is running."
+
+run-narrator-bot: venv install
+	python3 narrator_gm.py
 	@echo "Bot server is running."
 
 all: venv install run-bot
