@@ -199,6 +199,7 @@ allPlayers = {}  # dictionary mapping player IDs to server they're playing in
 # player removed when m!leave
 
 
+
 # TODO: remove this test_gpt_joke function (just for testing openai connection)
 async def test_gpt_joke(message, word):
     try:
@@ -521,7 +522,7 @@ async def nighttime(channel, server):
     for player in server.players.values():
         if player.role == 'mafia':
             player.action = 0
-            mafias.append(player)
+            mafias.append(player) # collect which players are the mafia
         elif player.role in power_roles:
             player.action = 0
             if player.cur_choice:

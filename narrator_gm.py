@@ -168,6 +168,14 @@ class Server:
         self.night_weapon = 'knife'
         self.narration = True
         self.background = '19th century village'    # todo: use it in gathering character descriptions and crime scene generation
+        self.discord_messages = {} 
+        """
+        round: {[
+            player: message, 
+            player2: message,
+        ]},
+        round2: etc etc
+        """
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -198,6 +206,36 @@ async def test_gpt_joke(message, word):
     except Exception as e:
         await message.channel.send("Sorry, I couldn't generate a joke right now. Please try again later.")
         print(e)  # For debugging
+
+async def compile_personas(server, message):
+    """
+    This function compiles each player's personas based on the messages they send.
+    option 1: read the independent player messages to form personas
+    -> challenge - sometimes messages dont make sense out of context
+    option 2: (1) pass stream of messages to gpt (2) ask it to form personas of each person (3) return the personas, matched to each character
+    -> challenge - how to match the personas to the characters? maybe use kani?
+    """
+    try:
+        player_list = [str(player) for player in server.players]
+        print(f'player_list = {player_list}')
+        # messages sent during this round
+        message_list = [{player:msg} for player, msg in message]
+        prompt = f'Compile brief personas of each player {player_list} based on these messages: {message_list}'
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="gpt-3.5-turbo",
+        )
+        personas = response.choices[0].message.content
+        await message.channel.send(personas)
+    except Exception as e:
+        await message.channel.send("Sorry, I couldn't compile personas right now. Please try again later.")
+        print(e)  # For debugging
+
 
 
 async def gpt_query(message, messages):
