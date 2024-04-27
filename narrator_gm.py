@@ -249,6 +249,20 @@ async def gpt_query(message, messages):
         await message.channel.send("Unable to generate description")
         print(e)  # For debugging
 
+async def dalle_query(message, input_text):
+    try:
+        response = openai_client.images.generate(
+            model="dall-e-3",
+            prompt=input_text,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        await message.channel.send(response.data[0].url)
+    except Exception as e:
+        await message.channel.send("Unable to generate image")
+        print(e)  # For debugging
+
 
 async def death(channel, player, server):
     server.players[player].alive = 0
@@ -656,6 +670,9 @@ async def m_start(message, author, server):
 
     await message.channel.send(setting)
     server.background = setting
+
+    image = await dalle_query(message, setting)
+    await message.channel.send(image)
 
     for player in server.players.values():
         role = allRoles.pop()
