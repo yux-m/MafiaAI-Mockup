@@ -196,6 +196,7 @@ class Server:
             'mafia': 0
         }
         self.predictorAI = None
+        self.personas = ""
         # self.predictorAI = PredictorAI() # Initialize this new object to store player knowledge and actions.
 
 

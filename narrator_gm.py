@@ -125,6 +125,7 @@ end_text = {
 }
 
 
+
 class Player:
     def __init__(self, id, server):
         self.id = id
@@ -188,7 +189,6 @@ allPlayers = {}  # dictionary mapping player IDs to server they're playing in
 
 # player removed when m!leave
 
-
 # TODO: remove this test_gpt_joke function (just for testing openai connection)
 async def test_gpt_joke(message, word):
     try:
@@ -207,20 +207,20 @@ async def test_gpt_joke(message, word):
         await message.channel.send("Sorry, I couldn't generate a joke right now. Please try again later.")
         print(e)  # For debugging
 
-async def compile_personas(server, message):
+async def compile_personas(server):
     """
     This function compiles each player's personas based on the messages they send.
     option 1: read the independent player messages to form personas
     -> challenge - sometimes messages dont make sense out of context
     option 2: (1) pass stream of messages to gpt (2) ask it to form personas of each person (3) return the personas, matched to each character
     -> challenge - how to match the personas to the characters? maybe use kani?
+
+    TODO: create json of personas and only pass in the relevant characters to narration?
     """
     try:
         player_list = [str(player) for player in server.players]
         print(f'player_list = {player_list}')
-        # messages sent during this round
-        message_list = [{player:msg} for player, msg in message]
-        prompt = f'Compile brief personas of each player {player_list} based on these messages: {message_list}'
+        prompt = f'Compile brief personas of each player {player_list} based on their conversation: {server.discord_messages}. Build off the current player personas: {server.personas}'
         response = openai_client.chat.completions.create(
             messages=[
                 {
@@ -231,11 +231,12 @@ async def compile_personas(server, message):
             model="gpt-3.5-turbo",
         )
         personas = response.choices[0].message.content
-        await message.channel.send(personas)
+        print(personas)
+        server.personas = personas
+        # await message.channel.send(personas)
     except Exception as e:
-        await message.channel.send("Sorry, I couldn't compile personas right now. Please try again later.")
+        # await message.channel.send("Sorry, I couldn't compile personas right now. Please try again later.")
         print(e)  # For debugging
-
 
 
 async def gpt_query(message, messages):
@@ -266,12 +267,13 @@ async def dalle_query(message, input_text):
 
 async def death(channel, player, server):
     server.players[player].alive = 0
+    await compile_personas(server)
 
     if server.narration:
         # Generate a description of the murder scene using GPT
         description = server.players[player].description
         weapon = server.night_weapon
-        prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words."
+        prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words. Be sure to incorporate the personas of the characters, which are {server.personas}."
         try:
             response = openai_client.chat.completions.create(
                 messages=[
@@ -668,11 +670,15 @@ async def m_start(message, author, server):
         },
     ],);
 
+    print(f"setting: {setting}") # this is empty, causing error
+
     await message.channel.send(setting)
     server.background = setting
 
     image = await dalle_query(message, setting)
     await message.channel.send(image)
+
+    print("giving player roles")
 
     for player in server.players.values():
         role = allRoles.pop()
@@ -1036,17 +1042,45 @@ dm_funcs = [
 @discord_client.event
 async def on_message(message):
     print('Message received: ' + message.content)
+    print('sent by: '+ message.author.name)
+    """
+    message is structured as: 
+    <Message id=1233869925211181066 channel=<TextChannel id=1227411329900478475 name='test' position=2 nsfw=False news=False category_id=None> type=<MessageType.default: 0> author=<Member id=507739401594470401 name='aashvi7833' global_name=None bot=False nick=None guild=<Guild id=1226286943533269115 name='MafiAI (test)' shard_id=0 chunked=True member_count=10>> flags=<MessageFlags value=0>>
+    """
+    # add to messages dict - also how to get player name?
     # await message.channel.send('Received a message in this thread!')
 
     if message.guild not in servers:
         servers[message.guild] = Server()
 
     if message.channel.type == discord.ChannelType.private and message.author.id in allPlayers:
-        # print('in allPlayers')
+        print('in allPlayers')
         server = servers[allPlayers[message.author.id]]
         player = server.players[message.author.id]
         if server.running and not server.phase and player.alive and player.role in power_roles:
             await check_action(player, server, message)
+
+    # stores the messages said in the one round - what is server 
+    print("storing message")
+    try:
+        curr_server = servers[message.guild]
+        if not curr_server.round in curr_server.discord_messages:
+            curr_server.discord_messages[curr_server.round] = [{message.author.name: message.content}]
+        else:
+            curr_server.discord_messages[curr_server.round].append({message.author.name: message.content})
+    except Exception as e:
+        print(e) 
+
+
+    print("done storing message")
+    
+    """
+    round: [
+        {player: message}, 
+        {player2: message},
+    ],
+    round2: etc etc
+    """
 
     if message.author == discord_client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
