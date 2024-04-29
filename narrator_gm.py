@@ -16,12 +16,6 @@ openai_client = OpenAI(base_url="https://oai.hconeai.com/v1", api_key=os.getenv(
 
 # Define intents
 intents = discord.Intents.all()
-# intents = discord.Intents.default()
-# intents.messages = True
-# intents.message_content = True
-# intents.guilds = True
-# intents.guild_messages = True
-# intents.dm_messages = True
 
 discord_client = discord.Client(intents=intents)
 
@@ -167,7 +161,8 @@ class Server:
         }
         self.night_weapon = 'knife'
         self.narration = True
-        self.background = '19th century village'    # todo: use it in gathering character descriptions and crime scene generation
+        self.background = '19th century village'    # background setting for narration
+        self.style = 'Agatha Christie'  # style of narration for crime scene generation
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -233,7 +228,14 @@ async def death(channel, player, server):
         # Generate a description of the murder scene using GPT
         description = server.players[player].description
         weapon = server.night_weapon
-        prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words."
+        background = server.background
+        style = server.style
+        prompt = f'''
+        For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
+        for a character described as '{description}' with the murder weapon being a {weapon}, 
+        found by people upon sunrise. Murderer unknown. Background: {background}.
+        Keep in one paragraph and within 100 words.
+        '''
         try:
             response = openai_client.chat.completions.create(
                 messages=[
@@ -619,19 +621,21 @@ async def m_start(message, author, server):
 
     random.shuffle(allRoles)
 
-    setting = await gpt_query(message, messages=[
-        {
-        "role": "system",
-        "content": "You are a game master for a game of Mafia"
-        },
-        {
-        "role": "user",
-        "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
-        },
-    ],);
+    # narration background
+    if server.narration:
+        setting = await gpt_query(message, messages=[
+            {
+            "role": "system",
+            "content": "You are a game master for a game of Mafia"
+            },
+            {
+            "role": "user",
+            "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
+            },
+        ],)
 
-    await message.channel.send(setting)
-    server.background = setting
+        await message.channel.send(setting)
+        server.background = setting
 
     image = await dalle_query(message, setting)
     await message.channel.send(image)
