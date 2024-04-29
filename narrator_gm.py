@@ -16,16 +16,12 @@ openai_client = OpenAI(base_url="https://oai.hconeai.com/v1", api_key=os.getenv(
 
 # Define intents
 intents = discord.Intents.all()
-# intents = discord.Intents.default()
-# intents.messages = True
-# intents.message_content = True
-# intents.guilds = True
-# intents.guild_messages = True
-# intents.dm_messages = True
 
 discord_client = discord.Client(intents=intents)
 
 activity = discord.Game(name="m!help")
+
+total_player_list = []
 
 
 @discord_client.event
@@ -129,6 +125,7 @@ end_text = {
 class Player:
     def __init__(self, id, server):
         self.id = id
+        self.name = ""
         self.alive = 1
         self.role = None
         self.vote = None
@@ -168,7 +165,6 @@ class Server:
         }
         self.night_weapon = 'knife'
         self.narration = True
-        self.background = '19th century village'    # todo: use it in gathering character descriptions and crime scene generation
         self.discord_messages = {} 
         """
         round: {[
@@ -177,6 +173,9 @@ class Server:
         ]},
         round2: etc etc
         """
+        self.personas = ""
+        self.background = '19th century village'    # background setting for narration
+        self.style = 'Agatha Christie'  # style of narration for crime scene generation
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -218,9 +217,12 @@ async def compile_personas(server):
     TODO: create json of personas and only pass in the relevant characters to narration?
     """
     try:
-        player_list = [str(player) for player in server.players]
+        print(f"server personas: {server.personas}")
+        # issue: why is this empty?
+        # player_list = [player.name for player in server.players.values()]
+        player_list = total_player_list
         print(f'player_list = {player_list}')
-        prompt = f'Compile brief personas of each player {player_list} based on their conversation: {server.discord_messages}. Build off the current player personas: {server.personas}'
+        prompt = f'Compile brief personas of each player only from the player list: {player_list} based on their conversation: {server.discord_messages}. Build off the current player personas: {server.personas}'
         response = openai_client.chat.completions.create(
             messages=[
                 {
@@ -239,56 +241,88 @@ async def compile_personas(server):
         print(e)  # For debugging
 
 
-async def gpt_query(message, messages):
+async def gpt_query(messages):
     try:
         response = openai_client.chat.completions.create(
-                messages= messages,
+                messages=messages,
                 model="gpt-3.5-turbo",
             )
-        await message.channel.send(response.choices[0].message.content)
+        return response.choices[0].message.content
     except Exception as e:
-        await message.channel.send("Unable to generate description")
         print(e)  # For debugging
+        return None
 
-async def dalle_query(message, input_text):
+
+async def gpt_query_single(prompt):
+    messages = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+    return await gpt_query(messages)
+
+
+async def dalle_query(prompt):
     try:
         response = openai_client.images.generate(
             model="dall-e-3",
-            prompt=input_text,
+            prompt=prompt,
             size="1024x1024",
             quality="standard",
             n=1,
         )
-        await message.channel.send(response.data[0].url)
+        print(response.data[0]) # For debugging
+        return response.data[0].url
     except Exception as e:
-        await message.channel.send("Unable to generate image")
         print(e)  # For debugging
+        return None
 
+
+async def m_test_personas(message, server):
+    print("in m_test_personas")
+    await compile_personas(server)
+    await message.channel.send(f'Personas compiled: {server.personas}')
 
 async def death(channel, player, server):
     server.players[player].alive = 0
     await compile_personas(server)
+    print(f"server personas: {server.personas}")
 
     if server.narration:
         # Generate a description of the murder scene using GPT
         description = server.players[player].description
         weapon = server.night_weapon
-        prompt = f"For our novel style mafia game, describe a mysterious and gruesome murder scene for a character described as '{description}' with the murder weapon being a {weapon}, found by people upon sunrise. Murderer unknown. Keep in one paragraph and within 100 words. Be sure to incorporate the personas of the characters, which are {server.personas}."
-        try:
-            response = openai_client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model="gpt-3.5-turbo",
-            )
-            murder_scene_description = response.choices[0].message.content
+        background = server.background
+        style = server.style
+        prompt = f'''
+        For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
+        for a character described as '{description}' with the murder weapon being a {weapon}, 
+        found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
+        Be sure to incorporate the personas of the characters, which are {server.personas}.
+        Keep in one paragraph and within 100 words.
+        '''
+        murder_scene_description = await gpt_query_single(prompt)
+        if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
+            # if gpt failed to generate the description
+            await channel.send(
+                f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
+        else:
             await channel.send(murder_scene_description)
-        except Exception as e:
-            await channel.send(f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
-            print(e)  # For debugging
+
+            image_prompt = f'''
+            Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+            Way: with {weapon}
+            Character X: just a black shadow escaping or leaving, facing away
+            Character V: 
+            {murder_scene_description}
+            Make sure there's no trace of who did this.
+            Make sure it doesn't conflict with the background: {background}.
+            Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+            '''
+            image = await dalle_query(image_prompt)
+            if image is not None:
+                await channel.channel.send(image)
 
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
@@ -659,24 +693,33 @@ async def m_start(message, author, server):
 
     random.shuffle(allRoles)
 
-    setting = await gpt_query(message, messages=[
-        {
-        "role": "system",
-        "content": "You are a game master for a game of Mafia"
-        },
-        {
-        "role": "user",
-        "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
-        },
-    ],);
+    # ask for a keyword to generate narration background
+    await message.channel.send('Please type a keyword or theme for the setting of this game\'s narration background (e.g. 19th century village):')
+    try:
+        response = await discord_client.wait_for('message', timeout=60.0)
+        keyword = response.content
+    except asyncio.TimeoutError:
+        await message.channel.send('No keyword received. Using default background setting.')
+        keyword = '19th century village'
 
-    print(f"setting: {setting}") # this is empty, causing error
+    # narration background
+    if server.narration:
+        prompt = f'''
+                You are a game master for a game of Mafia.
+                Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better.
+                Keyword: {keyword}
+                Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words.
+                '''
+        setting = await gpt_query_single(prompt)
+        if setting is None:
+            await message.channel.send("The story happened in a small village in the 19th century.")
+        else:
+            await message.channel.send(setting)
+            server.background = setting
 
-    await message.channel.send(setting)
-    server.background = setting
-
-    image = await dalle_query(message, setting)
-    await message.channel.send(image)
+        image = await dalle_query(server.background)
+        if image is not None:
+            await message.channel.send(image)
 
     print("giving player roles")
 
@@ -834,6 +877,9 @@ async def m_join(message, author, server):
     else:
         allPlayers[author] = message.guild
         server.players[author] = Player(author, server)
+        player_name = message.author.name
+        server.players[author].name = player_name
+        total_player_list.append(player_name)
         role = discord.utils.get(message.guild.roles, name='Mafia')
         await message.author.add_roles(role)
         await message.channel.send('<@%s> has joined the game.' % str(author))
@@ -1029,7 +1075,8 @@ to_func = {
     'alive': m_alive,
     'dead': m_dead,
     'time': m_time,
-    'narration': m_narration
+    'narration': m_narration,
+    'test_personas':m_test_personas
 }
 
 dm_funcs = [
@@ -1059,6 +1106,11 @@ async def on_message(message):
         player = server.players[message.author.id]
         if server.running and not server.phase and player.alive and player.role in power_roles:
             await check_action(player, server, message)
+
+    if message.content.startswith('test_personas!'):
+        print("on_message: test personas")
+        await m_test_personas(message, servers[message.guild])
+        return
 
     # stores the messages said in the one round - what is server 
     print("storing message")
@@ -1097,6 +1149,7 @@ async def on_message(message):
             await message.channel.send("Please provide a word for me to joke about. Use the format m!testgpt!{word}")
         return
     # TODO: remove above
+
 
     if len(query) and query[0] in commands:
         print('Command received: ' + query[0])
