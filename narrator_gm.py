@@ -195,30 +195,42 @@ async def test_gpt_joke(message, word):
         print(e)  # For debugging
 
 
-async def gpt_query(message, messages):
+async def gpt_query(messages):
     try:
         response = openai_client.chat.completions.create(
-                messages= messages,
+                messages=messages,
                 model="gpt-3.5-turbo",
             )
-        await message.channel.send(response.choices[0].message.content)
+        return response.choices[0].message.content
     except Exception as e:
-        await message.channel.send("Unable to generate description")
         print(e)  # For debugging
+        return None
 
-async def dalle_query(message, input_text):
+
+async def gpt_query_single(prompt):
+    messages = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+    return await gpt_query(messages)
+
+
+async def dalle_query(prompt):
     try:
         response = openai_client.images.generate(
             model="dall-e-3",
-            prompt=input_text,
+            prompt=prompt,
             size="1024x1024",
             quality="standard",
             n=1,
         )
-        await message.channel.send(response.data[0].url)
+        print(response.data[0]) # For debugging
+        return response.data[0].url
     except Exception as e:
-        await message.channel.send("Unable to generate image")
         print(e)  # For debugging
+        return None
 
 
 async def death(channel, player, server):
@@ -233,24 +245,30 @@ async def death(channel, player, server):
         prompt = f'''
         For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
         for a character described as '{description}' with the murder weapon being a {weapon}, 
-        found by people upon sunrise. Murderer unknown. Background: {background}.
+        found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
         Keep in one paragraph and within 100 words.
         '''
-        try:
-            response = openai_client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model="gpt-3.5-turbo",
-            )
-            murder_scene_description = response.choices[0].message.content
+        murder_scene_description = await gpt_query_single(prompt)
+        if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
+            # if gpt failed to generate the description
+            await channel.send(
+                f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
+        else:
             await channel.send(murder_scene_description)
-        except Exception as e:
-            await channel.send(f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
-            print(e)  # For debugging
+
+            image_prompt = f'''
+            Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+            Way: with {weapon}
+            Character X: just a black shadow escaping or leaving, facing away
+            Character V: 
+            {murder_scene_description}
+            Make sure there's no trace of who did this.
+            Make sure it doesn't conflict with the background: {background}.
+            Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+            '''
+            image = await dalle_query(image_prompt)
+            if image is not None:
+                await channel.channel.send(image)
 
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
@@ -621,24 +639,33 @@ async def m_start(message, author, server):
 
     random.shuffle(allRoles)
 
+    # ask for a keyword to generate narration background
+    await message.channel.send('Please type a keyword or theme for the setting of this game\'s narration background (e.g. 19th century village):')
+    try:
+        response = await discord_client.wait_for('message', timeout=60.0)
+        keyword = response.content
+    except asyncio.TimeoutError:
+        await message.channel.send('No keyword received. Using default background setting.')
+        keyword = '19th century village'
+
     # narration background
     if server.narration:
-        setting = await gpt_query(message, messages=[
-            {
-            "role": "system",
-            "content": "You are a game master for a game of Mafia"
-            },
-            {
-            "role": "user",
-            "content": "Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better. Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words."
-            },
-        ],)
+        prompt = f'''
+                You are a game master for a game of Mafia.
+                Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better.
+                Keyword: {keyword}
+                Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words.
+                '''
+        setting = await gpt_query_single(prompt)
+        if setting is None:
+            await message.channel.send("The story happened in a small village in the 19th century.")
+        else:
+            await message.channel.send(setting)
+            server.background = setting
 
-        await message.channel.send(setting)
-        server.background = setting
-
-    image = await dalle_query(message, setting)
-    await message.channel.send(image)
+        image = await dalle_query(server.background)
+        if image is not None:
+            await message.channel.send(image)
 
     for player in server.players.values():
         role = allRoles.pop()
