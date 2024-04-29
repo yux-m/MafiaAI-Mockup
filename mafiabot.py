@@ -250,6 +250,7 @@ async def game_end(
     channel, winner, server
 ):  # end of game message (role reveal, congratulation of winners)
     # TODO
+
     output = await m_predict(server)
     await channel.send(output)
     # print("id to players", server.id_to_player)
@@ -300,14 +301,6 @@ async def check_votes(channel, server):
 
 
 async def daytime(channel, server):
-    global bot_dialog, players_dialog
-    # server.predictorAI.world_facts.update({server.round, bot_dialog})
-    # server.predictorAI.round_descriptions.update({server.round, players_dialog})
-    server.predictorAI.world_facts.append(bot_dialog)
-    server.predictorAI.round_descriptions.append(players_dialog)
-
-    bot_dialog = []
-    players_dialog = []
     await channel.send("It is daylight.")
 
     if server.settings["daystart"]:
@@ -379,7 +372,7 @@ async def daytime(channel, server):
                 kill = tar
 
         if kill != None and kill != "no-kill" and kill not in server.saves:
-            await channel.send("<@%s> has been killed in the night!" % str(kill.id))
+            await channel.send("<@%s> has been killed in the night!" % server.id_to_player[kill.id])
             await death(channel, kill.id, server)
 
             # TODO Insert in predictorAI knowledge that player has been killed.
@@ -387,12 +380,15 @@ async def daytime(channel, server):
             server.predictorAI.deaths.append(
                 (server.round, server.id_to_player[kill.id])
             )
-            server.predictorAI.world_facts.append(
-                (
-                    server.round,
-                    "Player %s has been killed." % server.id_to_player[kill.id],
-                )
-            )
+
+            global bot_dialog, players_dialog
+            bot_dialog += "Player %s has been killed." % server.id_to_player[kill.id]
+            # server.predictorAI.world_facts.append(
+            #     (
+            #         "Round %s:" % server.round,
+            #         "Player %s has been killed." % server.id_to_player[kill.id],
+            #     )
+            # )
             # server.predictorAI.players.pop(kill.id)
             server.predictorAI.current.pop(kill.id)
 
@@ -439,24 +435,28 @@ async def daytime(channel, server):
         await channel.send("The townspeople have decided to lynch nobody.")
 
         # TODO Make an update to world facts.
-        server.predictorAI.world_facts.append(
-            (
-                server.round,
-                "The townspeople have decided to lynch nobody.".format(server.round),
-            )
-        )
+        # global bot_dialog, players_dialog
+
+        bot_dialog.append("The townspeople have decided to lynch nobody.".format(server.round))
+        # server.predictorAI.world_facts.append(
+        #     (
+        #         server.round,
+        #         "The townspeople have decided to lynch nobody.".format(server.round),
+        #     )
+        # )
     else:
         await channel.send("The townspeople have lynched <@%s>." % str(lynch))
 
         # TODO Update predictorAI.deaths and update world facts
         # print("is lynch a number:", lynch)
         server.predictorAI.deaths.append((server.round, server.id_to_player[lynch]))
-        server.predictorAI.world_facts.append(
-            (
-                server.round,
-                "The townspeople have lynched %s." % server.id_to_player[lynch],
-            )
-        )
+        bot_dialog += "The townspeople have lynched %s." % server.id_to_player[lynch]
+        # server.predictorAI.world_facts.append(
+        #     (
+        #         server.round,
+        #         "The townspeople have lynched %s." % server.id_to_player[lynch],
+        #     )
+        # )
         # server.predictorAI.players.pop(lynch)
         server.predictorAI.current.pop(lynch)
         # print('id to player in lynch:', server.id_to_player)
@@ -692,6 +692,17 @@ async def nighttime(channel, server):
         if server.time != "inf":
             server.time = server.settings["limit2"] * 60 - (time.time() - start_time)
         await asyncio.sleep(1)
+
+    # MELANIE'S STUFF
+    global bot_dialog, players_dialog
+    server.predictorAI.world_facts.append(bot_dialog)
+    server.predictorAI.round_descriptions.append(players_dialog)
+
+    # print(server.predictorAI.world_facts)
+    # print(server.predictorAI.round_descriptions)
+
+    bot_dialog = []
+    players_dialog = []
 
     await daytime(channel, server)
 
@@ -987,6 +998,7 @@ async def m_vote(message, author, server):
         return
     await message.channel.send(
         "<@%s> has placed their vote on <@%s>." % (str(author), str(tar[2:-1]))
+        # "<@%s> has placed their vote on <@%s>." % ( server.id_to_player[author], server.id_to_player[(tar[2:-1])])
     )
     server.players[author].vote = int(tar[2:-1])
 
@@ -1197,7 +1209,7 @@ async def m_predict(server):
     names = []
     for player in server.predictorAI.players:
         names.append(server.id_to_player[player])
-    print("all names:", names)
+    # print("all names:", names)
     # print("dictionary: id-> Obj", server.predictorAI.players)
     print("Current players:", server.predictorAI.current.values())
     print("World facts:", server.predictorAI.world_facts)
@@ -1258,20 +1270,21 @@ async def on_message(message):
 
     # print("                on message running")
     global bot_dialog, players_dialog
-    if (
-        message.channel.type != discord.ChannelType.private
-        and message.author.id in allPlayers
-    ):
-        players_dialog.append((message.author.name, message.content))
-    if (
-        message.channel.type != discord.ChannelType.private
-        and message.author.id not in allPlayers
-    ):
-        bot_dialog.append((message.author.name, message.content))
+    if (not message.content.startswith("m!")):
+        if (
+            message.channel.type != discord.ChannelType.private
+            and message.author.id in allPlayers
+        ):
+            players_dialog.append((message.author.name, message.content))
+        if (
+            message.channel.type != discord.ChannelType.private
+            and message.author.id not in allPlayers
+        ):
+            bot_dialog.append((message.author.name, message.content))
 
     # print(bot_dialog)
     # print(players_dialog)
-    
+
     # print("author & id of message:", message.author, message.id)
     # print("message channel:", message.channel) # General: private
     # print(message.channel.type) # gen
@@ -1330,33 +1343,6 @@ async def on_message(message):
             await func(message, message.author.id, servers[message.guild])
     else:
         await invalid(message, servers[message.guild])
-
-    # MELANIE TODO
-    # if server_exists:
-    #     print("                 does server exist")
-    # if server is not None:
-    #     print("server exists")
-    #     if server.settings["daystart"]:  # during daytime, reset dialog
-    #         bot_dialog = ""
-    #         players_dialog = {}
-    #         # current_round = server.round
-
-    #     if server.settings["reveal"]:  # after someone is voted out, send current bot_dialog and players_dialog from most recent daytime round into predictorAI
-    #         print("                 IN REVEAL")
-    #         server.predictorAI.self.world_facts.put(bot_dialog)
-    #         server.predictorAI.self.round_descriptions.put(players_dialog)
-
-    # if (
-    #     message.author.id not in allPlayers
-    # ):  # if bot is speaking, collect its message and add to bot_dialog
-    #     bot_dialog += message.author + ":" + message.content
-    # else:  # if a player is speaking, collect player message and add to player_dialog
-    #     print("             IN else")
-    #     # print(server.id_to_player[message.author])
-    #     # print(message.author)
-    #     players_dialog += message.author + ":" + message.content
-
-    # print(server.id_to_player[message.author])
 
 
 openai.run(DISCORD_BOT_TOKEN)
