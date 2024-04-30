@@ -64,7 +64,10 @@ commands = {
     'alive': '`m!alive` displays all the roles and their quantities that are still in play.',
     'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).',
     'time': '`m!time` displays the amount of time left, before the day or night ends.',
-    'narration': '`m!narration` toggles the narration setting'
+    'narration': '`m!narration` toggles the narration setting',
+    'visual': '`m!visual` toggles the visual setting',
+    'context': '`m!context` sets the setting for the game'
+
 }
 
 help_text = [
@@ -132,6 +135,7 @@ class Player:
         self.cur_choice = None  # if a power role, their choice for the night
         self.lst_choice = None  # if parity cop, last choice
         self.description = 'a normal human'  # description of character for potential use in crime scene generation
+        self.image_url = None
 
 
 class Server:
@@ -161,7 +165,9 @@ class Server:
         }
         self.night_weapon = 'knife'
         self.narration = True
-        self.background = '19th century village'    # background setting for narration
+        self.background = 'The story happens in the 20th century Europe...'    
+        self.visual = True
+        self.context = '20th century europe'
         self.style = 'Agatha Christie'  # style of narration for crime scene generation
 
 
@@ -222,7 +228,7 @@ async def dalle_query(prompt):
         response = openai_client.images.generate(
             model="dall-e-3",
             prompt=prompt,
-            size="1024x1024",
+            size="1792x1024",
             quality="standard",
             n=1,
         )
@@ -233,42 +239,51 @@ async def dalle_query(prompt):
         return None
 
 
-async def death(channel, player, server):
+async def death(channel, player, server, lynch:bool):
     server.players[player].alive = 0
 
     if server.narration:
         # Generate a description of the murder scene using GPT
+
         description = server.players[player].description
         weapon = server.night_weapon
         background = server.background
         style = server.style
-        prompt = f'''
-        For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
-        for a character described as '{description}' with the murder weapon being a {weapon}, 
-        found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
-        Keep in one paragraph and within 100 words.
-        '''
-        murder_scene_description = await gpt_query_single(prompt)
-        if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
-            # if gpt failed to generate the description
-            await channel.send(
-                f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
-        else:
-            await channel.send(murder_scene_description)
-
-            image_prompt = f'''
-            Comics scene: A mysterious character (X) attacked the character (V) and escaped 
-            Way: with {weapon}
-            Character X: just a black shadow escaping or leaving, facing away
-            Character V: 
-            {murder_scene_description}
-            Make sure there's no trace of who did this.
-            Make sure it doesn't conflict with the background: {background}.
-            Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+        
+        if not lynch:
+            prompt = f'''
+            For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
+            for a character described as '{description}' with the murder weapon being a {weapon}, 
+            found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
+            Keep in one paragraph and within 100 words.
             '''
-            image = await dalle_query(image_prompt)
-            if image is not None:
-                await channel.channel.send(image)
+            murder_scene_description = await gpt_query_single(prompt)
+            if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
+                # if gpt failed to generate the description
+                await channel.send(
+                    f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
+            else:
+                await channel.send(murder_scene_description)
+
+                if server.visual:
+                    image_prompt = f'''
+                    Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+                    Way: with {weapon}
+                    Character X: just a black shadow escaping or leaving, facing away
+                    Character V: 
+                    {murder_scene_description}
+                    Make sure there's no trace of who did this.
+                    Make sure it doesn't conflict with the background: {background}.
+                    Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+                    '''
+                    image = await dalle_query(image_prompt)
+                    if image is not None:
+                        await channel.channel.send(image)
+                        
+         else:
+            prompt = f"You are a game master for a game of Mafia.\nThe townspeople have lynched a character described as '{server.players[player].description}'. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
+            response = await gpt_query(prompt)
+            await channel.send("The tombstone reads: " + response)
 
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
@@ -352,14 +367,13 @@ async def daytime(channel, server):
 
         if kill != None and kill != 'no-kill' and kill not in server.saves:
             await channel.send('<@%s> has been killed in the night!' % str(kill.id))
-            await death(channel, kill.id, server)
+            await death(channel, kill.id, server, lynch=False)
             if await check_end(channel, server):
                 return
         else:
             await channel.send('It was a quiet night, without any deaths.')
-
     await channel.send(
-        'It is day %d! You have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
+        '*----------------DAY %d 🌞----------------* \nYou have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
 
     server.phase = 1
     server.time = server.settings['limit1']
@@ -392,7 +406,7 @@ async def daytime(channel, server):
         await channel.send('The townspeople have decided to lynch nobody.')
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
-        await death(channel, lynch, server)
+        await death(channel, lynch, server, lynch=True)
         if await check_end(channel, server):
             return
     await nighttime(channel, server)
@@ -536,8 +550,7 @@ async def check_action(player, server, message):
 async def nighttime(channel, server):
     if not server.settings['daystart']:
         server.round += 1
-
-    await channel.send('It is now night %d. If you have a nighttime action, you have %s minutes to take it.' % (
+    await channel.send('*----------------NIGHT %d 🌘----------------* \nIf you have a nighttime action, you have %s minutes to take it.' % (
         server.round, str(server.settings['limit2'])))
 
     server.phase = 0
@@ -639,21 +652,11 @@ async def m_start(message, author, server):
 
     random.shuffle(allRoles)
 
-    # ask for a keyword to generate narration background
-    await message.channel.send('Please type a keyword or theme for the setting of this game\'s narration background (e.g. 19th century village):')
-    try:
-        response = await discord_client.wait_for('message', timeout=60.0)
-        keyword = response.content
-    except asyncio.TimeoutError:
-        await message.channel.send('No keyword received. Using default background setting.')
-        keyword = '19th century village'
-
     # narration background
     if server.narration:
         prompt = f'''
-                You are a game master for a game of Mafia.
+                You are a game master for a game of Mafia. The context of the game is {server.context}
                 Generate a dramatic description of the town in which a Mafia game backdrop takes place. The more specific the better.
-                Keyword: {keyword}
                 Include the year of the events. Do NOT mention any characters in the game. Do NOT mention any plot. Limit 100 words.
                 '''
         setting = await gpt_query_single(prompt)
@@ -662,21 +665,27 @@ async def m_start(message, author, server):
         else:
             await message.channel.send(setting)
             server.background = setting
+        await message.channel.send(setting)
 
-        image = await dalle_query(server.background)
-        if image is not None:
-            await message.channel.send(image)
+        if server.visual:
+            image = await dalle_query("Generate an evocative image for the following video game setting: " + setting)
+            if image is not None:
+                await message.channel.send(image)
 
     for player in server.players.values():
         role = allRoles.pop()
         player.role = role
         user = await discord_client.fetch_user(player.id)
+        await user.send('*----------------NEW MAFIAI GAME SESSION STARTED🕵️🕹️----------------*')
+        await user.send('Welcome to MafiAI!')
         await user.send('Your role is `%s`.' % role)
         # Ask for character descriptions for potential use in murder scene
         if server.narration:
-            await user.send('Please send a short description of your character.')
+            await user.send('Please input a VERY short description of your character in this town (i.e old man, fisherman, janitor, butcher etc). This will be public to all players, so do not reveal your identity.')
             response = await discord_client.wait_for('message', check=lambda m: m.author == user)
             server.players[player.id].description = response.content
+
+    await message.channel.send("*----------------STARRING⭐️----------------*")
 
     # resetting player variables
     for player in server.players.values():
@@ -684,10 +693,12 @@ async def m_start(message, author, server):
         player.lst_choice = None
         player.vote = None
         player.alive = 1
-
+        await message.channel.send('Player <@%s>' % str(player.id))
+        await message.channel.send(player.description)
+        if server.visual:
+            player_image = await dalle_query(message, f"You generate game art. The setting is as follows {setting}. Depict a headshot of a character with the following description: {player.description}. The headshot should be from torso upwards, facing the camera. The character should occupy the foreground.")
     server.running = 1
     server.round = 0
-    await message.channel.send('The game has begun!')
     if server.settings['daystart']:
         await daytime(message.channel, server)
     else:
@@ -723,6 +734,41 @@ async def m_narration(message, author, server):
             await message.channel.send('Narration setting unchanged.')
     except asyncio.TimeoutError:
         await message.channel.send('No response received. Narration setting remains unchanged.')
+
+async def m_visual(message, author, server):
+    current_state = "enabled" if server.visual else "disabled"
+    toggle_action = "disable" if server.visual else "enable"
+    await message.channel.send(f'Generative visuals are currently {current_state}. Would you like to {toggle_action} it? (yes/no)')
+
+    # Check if the reply is from the same author and channel
+    def check(m):
+        return m.author == message.author and m.channel == message.channel and m.content.lower() in ["yes", "no", "y", "n"]
+
+    try:
+        reply = await discord_client.wait_for('message', timeout=120.0, check=check)  # 30 seconds to respond
+        if reply.content.lower() == "yes" or reply.content.lower() == "y":
+            server.visual = not server.visual
+            new_state = "enabled" if server.visual else "disabled"
+            await message.channel.send(f'Generative visuals has been {new_state}.')
+        else:
+            await message.channel.send('Generative visuals setting unchanged.')
+    except asyncio.TimeoutError:
+        await message.channel.send('No response received. Generative visuals setting remains unchanged.')
+
+async def m_context(message, author, server):
+    await message.channel.send(f'Please provide any kind of context or background to shape the experience of your mafia game! The current context is {server.context}')
+
+    # Check if the reply is from the same author and channel
+    def check(m):
+        return m.author == message.author and m.channel == message.channel
+
+    try:
+        reply = await discord_client.wait_for('message', timeout=120.0, check=check)  # 30 seconds to respond
+        server.context = reply.content
+        await message.channel.send(f'Context successfully updated. The context is now {server.context}')
+
+    except asyncio.TimeoutError:
+        await message.channel.send('No response received.')
 
 
 async def m_roles(message, author, server):
@@ -1016,7 +1062,9 @@ to_func = {
     'alive': m_alive,
     'dead': m_dead,
     'time': m_time,
-    'narration': m_narration
+    'narration': m_narration,
+    'visual':m_visual,
+    'context':m_context
 }
 
 dm_funcs = [
