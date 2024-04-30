@@ -265,22 +265,22 @@ async def death(channel, player, server, lynch:bool):
             else:
                 await channel.send(murder_scene_description)
 
-                if server.visual:
-                    image_prompt = f'''
-                    Comics scene: A mysterious character (X) attacked the character (V) and escaped 
-                    Way: with {weapon}
-                    Character X: just a black shadow escaping or leaving, facing away
-                    Character V: 
-                    {murder_scene_description}
-                    Make sure there's no trace of who did this.
-                    Make sure it doesn't conflict with the background: {background}.
-                    Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
-                    '''
-                    image = await dalle_query(image_prompt)
-                    if image is not None:
-                        await channel.send(image)
+            if server.visual:
+                image_prompt = f'''
+                Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+                Way: with {weapon}
+                Character X: just a black shadow escaping or leaving, facing away
+                Character V: 
+                {murder_scene_description}
+                Make sure there's no trace of who did this.
+                Make sure it doesn't conflict with the background: {background}.
+                Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+                '''
+                image = await dalle_query(image_prompt)
+                if image is not None:
+                    await channel.send(image)
                         
-         else:
+        else:
             prompt = f"You are a game master for a game of Mafia.\nThe townspeople have lynched a character described as '{server.players[player].description}'. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
             response = await gpt_query(prompt)
             await channel.send("The tombstone reads: " + response)
