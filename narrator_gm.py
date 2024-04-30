@@ -16,12 +16,6 @@ openai_client = OpenAI(base_url="https://oai.hconeai.com/v1", api_key=os.getenv(
 
 # Define intents
 intents = discord.Intents.all()
-# intents = discord.Intents.default()
-# intents.messages = True
-# intents.message_content = True
-# intents.guilds = True
-# intents.guild_messages = True
-# intents.dm_messages = True
 
 discord_client = discord.Client(intents=intents)
 
@@ -72,8 +66,8 @@ commands = {
     'time': '`m!time` displays the amount of time left, before the day or night ends.',
     'narration': '`m!narration` toggles the narration setting',
     'visual': '`m!visual` toggles the visual setting',
-    'context': '`m!context` sets the setting for the game'
-
+    'context': '`m!context` sets the setting for the game',
+    'style': '`m!style` sets the style of narration for the game',
 }
 
 help_text = [
@@ -174,6 +168,7 @@ class Server:
         self.background = None    # todo: use it in gathering character descriptions and crime scene generation
         self.visual = True
         self.context = '20th century europe'
+        self.style = 'Agatha Christie'  # style of narration for crime scene generation
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -218,6 +213,25 @@ async def gpt_query(message, messages):
         await message.channel.send("Unable to generate a response.")
         print(e)  # For debugging
 
+
+async def gpt_query_single(prompt):
+    messages = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+    try:
+        response = openai_client.chat.completions.create(
+            messages=messages,
+            model="gpt-3.5-turbo",
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(e)  # For debugging
+        return None
+
+
 async def dalle_query(message, input_text):
     try:
         response = openai_client.images.generate(
@@ -233,23 +247,59 @@ async def dalle_query(message, input_text):
         print(e)  # For debugging
 
 
+async def dalle_query_single(prompt):
+    try:
+        response = openai_client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        print(response.data[0]) # For debugging
+        return response.data[0].url
+    except Exception as e:
+        print(e)  # For debugging
+        return None
+
+
 async def death(channel, player, server, lynch:bool):
     server.players[player].alive = 0
 
     if server.narration:
-        # Generate a description of the murder scene using GPT
         if not lynch:
-            response = await gpt_query(channel, messages=[
-                    {
-                    "role": "system",
-                    "content": "You are a game master for a game of Mafia"
-                    },
-                    {
-                    "role": "user",
-                    "content": f"Describe a mysterious and gruesome murder scene for a character described as '{server.players[player].description}' with the murder weapon being a {server.night_weapon}, found by people upon sunrise. Murderer unknown. Keep it vague and avoid any gruesome details. Keep in one paragraph and within 100 words."
-                    },
-                ],);
-            await channel.send(response)
+            # Generate a description of the murder scene using GPT
+            description = server.players[player].description
+            weapon = server.night_weapon
+            background = server.background
+            style = server.style
+            prompt = f'''
+                    For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
+                    for a character described as '{description}' with the murder weapon being a {weapon}, 
+                    found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
+                    Keep in one paragraph and within 100 words.
+                    '''
+            murder_scene_description = await gpt_query_single(prompt)
+            if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
+                # if gpt failed to generate the description
+                murder_scene_description = f"It was a horrific scene that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless mafia attacked the victim with {weapon}, leaving no trace."
+            await channel.send(murder_scene_description)
+
+            if server.visual:
+                image_prompt = f'''
+                            Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+                            Way: with {weapon}
+                            Character X: just a black shadow escaping or leaving, facing away
+                            Character V: 
+                            {murder_scene_description}
+                            Make sure there's no trace of who did this.
+                            Make sure it doesn't conflict with the background: {background}.
+                            Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+                            '''
+                image = await dalle_query_single(image_prompt)
+                if image is not None:
+                    await channel.channel.send(image)
+
         else:
             response = await gpt_query(channel, messages=[
                     {
@@ -260,8 +310,9 @@ async def death(channel, player, server, lynch:bool):
                     "role": "user",
                     "content": f"The townspeople have lynched a character described as '{server.players[player].description}'. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
                     },
-                ],);
+                ],)
             await channel.send("The tombstone reads: " + response)
+
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
 
@@ -745,6 +796,22 @@ async def m_context(message, author, server):
         await message.channel.send('No response received.')
 
 
+async def m_style(message, author, server):
+    await message.channel.send(f'Please provide a style for narration in your game! The current style is {server.style}')
+
+    # Check if the reply is from the same author and channel
+    def check(m):
+        return m.author == message.author and m.channel == message.channel
+
+    try:
+        reply = await discord_client.wait_for('message', timeout=60.0, check=check)  # 30 seconds to respond
+        server.context = reply.content
+        await message.channel.send(f'Style updated. The style is now {server.style}')
+
+    except asyncio.TimeoutError:
+        await message.channel.send('No response received.')
+
+
 async def m_roles(message, author, server):
     await message.channel.send('\n'.join(roles_text))
 
@@ -1038,7 +1105,8 @@ to_func = {
     'time': m_time,
     'narration': m_narration,
     'visual':m_visual,
-    'context':m_context
+    'context':m_context,
+    'style':m_style,
 }
 
 dm_funcs = [
