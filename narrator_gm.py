@@ -250,6 +250,7 @@ async def death(channel, player, server, lynch:bool):
                     },
                 ],);
             await channel.send(response)
+            await dalle_query(channel, f"Please generate a non-graphic depiction of the following scene: {response}")
         else:
             response = await gpt_query(channel, messages=[
                     {
@@ -262,6 +263,7 @@ async def death(channel, player, server, lynch:bool):
                     },
                 ],);
             await channel.send("The tombstone reads: " + response)
+            await dalle_query(channel, f"Please generate a non-graphic depiction of a tombstone with the following message: {response}")
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
 
@@ -540,7 +542,7 @@ async def nighttime(channel, server):
     # villagers' voting for the night weapon - so that everyone is typing something at night
     if any(player.role == 'villager' and player.alive for player in server.players.values()):
         weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
-        responses = await collect_votes(server, weapons, channel)
+        responses = await collect_votes(server, weapons)
         server.night_weapon = max(set(responses), key=responses.count) if responses else random.choice(weapons)
         await channel.send(f'Tonight\'s weapon of choice is: {server.night_weapon}')
     else:
