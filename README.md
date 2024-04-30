@@ -20,17 +20,18 @@ Credit to [aeternalis1/mafiabot](https://github.com/aeternalis1/mafiabot). Modif
     - `make all`
 5. Use the commands to play mafia with other members in the server (keep the bot server running)
 
-## How to use the bot to play a Mafia game:
-1. [Channel] Each player sends ‘m!join’ to join the game
-2. [Channel] Send `m!set <role> <number>` for each role (e.g. ‘m!set villager 3’). Available roles: villager, mafia, doctor, paritycop, normalcop. The sum of all roles set should be equal to the number of players.
-3. [Channel](Optional) Send ‘m!context’ to set the context (e.g. ‘20th century Europe’)
-4 [Channel] Send ‘m!start’ to start the game
+## Quick walkthrough of a Mafia game:
+### Setup
+1. [Channel] Each player sends `m!join` to join the game
+2. [Channel] Send `m!set <role> <number>` for each role (e.g. ‘m!set villager 3’). Available roles: villager, mafia, doctor, paritycop, normalcop. The sum of all roles should be equal to the number of players.
+3. [Channel] Send `m!context` to set the context (e.g. ‘20th century Europe’)
+4. [Channel] Send `m!start` to start the game
 5. [DM] Respond to the bot’s dm to customize your own character
-6. [DM] At night, respond to the the bot’s dm (every player has something to do at night)
-7. [Channel] In the daytime, talk and vote with ‘m!vote @<who_you_want_to_vote>’
-8. [Channel](Optional) Use `m!help <command>` whenever you’re not sure what a command does
+### Gameplay
+1. Night: respond to the bot’s dm (every player has something to do at night)
+2. Day: talk and vote with `m!vote @<who_you_want_to_vote>` in the channel
 
-## Bot commands (to be updated in the future based on modifications)
+## Bot commands
 
 ### Basic
 
@@ -59,6 +60,10 @@ Credit to [aeternalis1/mafiabot](https://github.com/aeternalis1/mafiabot). Modif
 `m!join` adds you to the game.
 
 `m!leave` removes you from the game. This may end an ongoing game, so be careful using this command.
+
+`m!context` sets the context of the game.
+
+`m!style` sets the narration style of the crime scene.
 
 ### In-game
 
