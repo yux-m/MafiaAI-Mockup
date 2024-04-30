@@ -298,7 +298,7 @@ async def death(channel, player, server, lynch:bool):
                             '''
                 image = await dalle_query_single(image_prompt)
                 if image is not None:
-                    await channel.channel.send(image)
+                    await channel.send(image)
 
         else:
             response = await gpt_query(channel, messages=[
@@ -589,13 +589,13 @@ async def nighttime(channel, server):
     server.saves = []
 
     # villagers' voting for the night weapon - so that everyone is typing something at night
-    if any(player.role == 'villager' and player.alive for player in server.players.values()):
-        weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
-        responses = await collect_votes(server, weapons)
-        server.night_weapon = max(set(responses), key=responses.count) if responses else random.choice(weapons)
-        await channel.send(f'Tonight\'s weapon of choice is: {server.night_weapon}')
-    else:
-        server.night_weapon = random.choice(['knife', 'gun', 'poison', 'rope', 'bare hands'])
+    # if any(player.role == 'villager' and player.alive for player in server.players.values()):
+    #     weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
+    #     responses = await collect_votes(server, weapons)
+    #     server.night_weapon = max(set(responses), key=responses.count) if responses else random.choice(weapons)
+    #     await channel.send(f'Tonight\'s weapon of choice is: {server.night_weapon}')
+    # else:
+    server.night_weapon = random.choice(['knife', 'gun', 'poison', 'rope', 'bare hands'])
 
     mafias = []
 
