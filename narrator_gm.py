@@ -278,7 +278,7 @@ async def death(channel, player, server, lynch:bool):
                     '''
                     image = await dalle_query(image_prompt)
                     if image is not None:
-                        await channel.channel.send(image)
+                        await channel.send(image)
                         
          else:
             prompt = f"You are a game master for a game of Mafia.\nThe townspeople have lynched a character described as '{server.players[player].description}'. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
