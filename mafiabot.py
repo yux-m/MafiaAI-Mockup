@@ -924,7 +924,7 @@ async def m_time(message, author, server):
 async def m_predict(message, author, server):
     if not server.running:
         await message.channel.send('There is no ongoing game. Please start a game first.')
-        # print("out here")
+        print("out here")
         return
     else:
         # print("In here")
