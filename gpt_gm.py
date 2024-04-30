@@ -26,7 +26,6 @@ def read_rules(filename):
 # game_rules = read_rules("game_rules.txt")
 # base_prompt = f"You are a game master of a party game. Game rules: {game_rules} \n\n"
 
-game_rules = ''
 base_prompt = 'You are a game master of a party game.'
 
 game_log = []  # This will store all game-related commands and events
@@ -35,9 +34,8 @@ message_history = []  # This will store all messages for summarization
 @discord_client.event
 async def on_ready():
     print(f'Logged in as {discord_client.user}!')
-    game_rules = await discord_client.wait_for("Please enter the game rules for Mafia. Send them in a single message.")
-    global base_prompt
-    base_prompt = f"You are a game master of a party game. Game rules: {game_rules} \n\n"
+    # game_rules = await discord_client.wait_for("Please enter the game rules for Mafia. Send them in a single message.")
+
 
 @discord_client.event
 async def on_message(message):
@@ -50,15 +48,23 @@ async def on_message(message):
     if message.content.startswith('m!'):
         game_log.append(f"{message.author}:{message.content}")
 
-        global base_prompt
+        if message.content == 'm!rules':
+            game_rules = await discord_client.wait_for("Please enter the game rules for Mafia. Send them in a single message.")
+            base_prompt = f"You are a game master of a party game. Game rules: {game_rules} \n\n"
+
         command = message.content[2:].strip()
-        prompt = base_prompt + f"History and current state: {game_log_to_str} \n User command: {command} \n Now continue to host the game and speak as the game master"
+        prompt = f"History and current state: {game_log_to_str} \n User command: {command} \n Now continue to host the game and speak as the game master"
         try:
-            response = openai_client.Completion.create(
-                model="gpt-3.5-turbo",
-                prompt=prompt,
-                max_tokens=150
-            )
+            response = await gpt_query(message, messages=[
+                {
+                "role": "system",
+                "content": base_prompt
+                },
+                {
+                "role": "user",
+                "content": prompt
+                },
+            ],)
             gpt_response = response['choices'][0]['text'].strip()
             if gpt_response:
                 await message.channel.send(gpt_response)
@@ -85,6 +91,18 @@ async def summarize_game():
         game_log = [summarized_log]  # Replace the detailed log with the summarized one
     except Exception as e:
         print(f"Error during summarization: {e}")
+
+
+async def gpt_query(message, messages):
+    try:
+        response = openai_client.chat.completions.create(
+                messages= messages,
+                model="gpt-3.5-turbo",
+            )
+        await message.channel.send(response.choices[0].message.content)
+    except Exception as e:
+        await message.channel.send("Unable to generate description")
+        print(e)  # For debugging
 
 
 discord_client.run(DISCORD_BOT_TOKEN)
