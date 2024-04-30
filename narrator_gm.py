@@ -251,40 +251,21 @@ async def death(channel, player, server, lynch:bool):
         style = server.style
         
         if not lynch:
-            prompt = f'''
-            For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
-            for a character described as '{description}' with the murder weapon being a {weapon}, 
-            found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
-            Keep in one paragraph and within 100 words.
-            '''
-            murder_scene_description = await gpt_query_single(prompt)
-            if murder_scene_description is None or murder_scene_description.startswith("Sorry"):
-                # if gpt failed to generate the description
-                await channel.send(
-                    f"It was a horrific crime that GPT refused to describe. The cold body lies on the ground: {description}. The ruthless murderer killed the victim with {weapon}, leaving no trace.")
-            else:
-                await channel.send(murder_scene_description)
-
-            if server.visual:
-                image_prompt = f'''
-                Comics scene: A mysterious character (X) attacked the character (V) and escaped 
-                Way: with {weapon}
-                Character X: just a black shadow escaping or leaving, facing away
-                Character V: 
-                {murder_scene_description}
-                Make sure there's no trace of who did this.
-                Make sure it doesn't conflict with the background: {background}.
-                Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
-                '''
-                image = await dalle_query(image_prompt)
-                if image is not None:
-                    await channel.send(image)
-                        
+            response = await gpt_query(channel, messages=[
+                    {
+                    "role": "system",
+                    "content": "You are a game master for a game of Mafia"
+                    },
+                    {
+                    "role": "user",
+                    "content": f"Describe a mysterious and gruesome murder scene for a character described as '{server.players[player].description}' with the murder weapon being a {server.night_weapon}, found by people upon sunrise. Murderer unknown. Keep it vague and avoid any gruesome details. Keep in one paragraph and within 100 words."
+                    },
+                ],);
+            await channel.send(response)
         else:
             prompt = f"You are a game master for a game of Mafia.\nThe townspeople have lynched a character described as '{server.players[player].description}'. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
             response = await gpt_query(prompt)
             await channel.send("The tombstone reads: " + response)
-
     if server.settings['reveal']:
         await channel.send(f'Their role was `{server.players[player].role}`.')
 
@@ -563,7 +544,7 @@ async def nighttime(channel, server):
     # villagers' voting for the night weapon - so that everyone is typing something at night
     if any(player.role == 'villager' and player.alive for player in server.players.values()):
         weapons = ['knife', 'gun', 'poison', 'rope', 'bare hands']
-        responses = await collect_votes(server, weapons, channel)
+        responses = await collect_votes(server, weapons)
         server.night_weapon = max(set(responses), key=responses.count) if responses else random.choice(weapons)
         await channel.send(f'Tonight\'s weapon of choice is: {server.night_weapon}')
     else:
