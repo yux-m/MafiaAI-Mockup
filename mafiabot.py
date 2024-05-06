@@ -470,7 +470,7 @@ async def daytime(channel, server):
         if await check_end(channel, server):
             return
         
-    gpt_prediction = await m_predict(server)
+    gpt_prediction = await m_predict_return(server)
     server.predictorAI.predictions.append(gpt_prediction)
 
     if server.verbose:
@@ -1141,7 +1141,7 @@ async def m_time(message, author, server):
                 int(server.time) / 60, int(server.time) % 60))
             
 
-async def m_predict(server):
+async def m_predict_return(server):
     names = []
     for player in server.predictorAI.players:
         names.append(server.id_to_player[player])
