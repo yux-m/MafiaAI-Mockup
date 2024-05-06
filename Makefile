@@ -15,6 +15,12 @@ run-narrator-bot: venv install
 	python3 narrator_gm.py
 	@echo "Bot server is running."
 
-all: venv install run-mafia-bot
 
-.PHONY: venv install run-bot
+run-gm-bot: venv install
+	python3 gpt_gm.py
+	@echo "Bot server is running."
+
+all: venv install run-narrator-bot
+
+
+.PHONY: venv install run-narrator-bot

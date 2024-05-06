@@ -1191,9 +1191,37 @@ async def m_time(message, author, server):
         if server.settings["limit1"] == "inf":
             await message.channel.send("There is no time limit for daytime.")
         else:
-            await message.channel.send(
-                "There are %d minutes and %d seconds remaining in the day."
-                % (int(server.time) / 60, int(server.time) % 60)
+            await message.channel.send('There are %d minutes and %d seconds remaining in the day.' % (
+                int(server.time) / 60, int(server.time) % 60))
+    else:
+        if server.settings['limit2'] == 'inf':
+            await message.channel.send('There is no time limit for nighttime.')
+        else:
+            await message.channel.send('There are %d minutes and %d seconds remaining in the night.' % (
+                int(server.time) / 60, int(server.time) % 60))
+
+async def m_predict(message, author, server):
+    if not server.running:
+        await message.channel.send('There is no ongoing game. Please start a game first.')
+        print("out here")
+        return
+    else:
+        # print("In here")
+        if not server.predictorAI:
+            return
+        
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": f"You are an analyzer who predicts who the current mafia player is. You have access to the following information: {server.predictorAI.world_facts}, which tells you what happened after every round. The current players in the game are: {server.predictorAI.players}. Make a strong prediction on who the mafia player is and explain logically how you came to this conclusion. If any of the variables are missing, please make a prediction based on the information you have. Predict the player id of the mafia player."
+                    }
+                ],
+                temperature=1,
+                max_tokens=256,
+                top_p=1
             )
     else:
         if server.settings["limit2"] == "inf":
