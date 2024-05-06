@@ -650,12 +650,12 @@ async def m_start(message, author, server):
         role = allRoles.pop()
         player.role = role
         user = await discord_client.fetch_user(player.id)
-        await user.send('*----------------NEW MAFIAI GAME SESSION STARTED🕵️🕹️----------------*')
-        await user.send('Welcome to MafiAI!')
-        await user.send('Your role is `%s`.' % role)
+        user.send('*----------------NEW MAFIAI GAME SESSION STARTED🕵️🕹️----------------*')
+        user.send('Welcome to MafiAI!')
+        user.send('Your role is `%s`.' % role)
         # Ask for character descriptions for potential use in murder scene
         if server.narration:
-            await user.send('Please input a VERY short description of your character in this town (i.e old man, fisherman, janitor, butcher etc). This will be public to all players, so do not reveal your identity.')
+            user.send('Please input a VERY short description of your character in this town (i.e old man, fisherman, janitor, butcher etc). This will be public to all players, so do not reveal your identity.')
             response = await discord_client.wait_for('message', check=lambda m: m.author == user)
             server.players[player.id].description = response.content
 
