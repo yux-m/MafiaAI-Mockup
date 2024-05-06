@@ -76,9 +76,6 @@ commands = {
     'narration': '`m!narration` toggles the narration setting',
     'visual': '`m!visual` toggles the visual setting',
     'context': '`m!context` sets the setting for the game',
-    'testPredict': '`m!testPredict` tests the predictorAI object.',
-    'testState': '`m!testState` tests the state of the predictorAI object.',
-    'test1': '`m!test1` tests the chatgpt model and prediction',
     'verbose' : '`m!verbose` toggles GPT prediction on or off after every round',
 }
 
@@ -86,7 +83,7 @@ help_text = [
     "```List of commands```",
     "Type `m!help [command]` to receive details about the command itself.",
     "**1. Basic**: `help` `h2p` `start` `end`",
-    "**2. Setup**: `roles` `set` `setup` `settings` `toggle` `setlimit` `join` `leave`",
+    "**2. Setup**: `roles` `set` `setup` `settings` `toggle` `setlimit` `join` `leave` `narration` `verbose` `visual` `context`",
     "**3. In-game**: `vote` `unvote` `status` `players` `alive` `dead` `time`"
 ]
 
@@ -197,14 +194,12 @@ class Server:
         self.night_weapon = 'knife'
         self.narration = True
         self.background = 'The story happens in the 20th century Europe...'    
-        self.visual = True
+        self.visual = False
         self.context = '20th century europe'
         self.style = 'Agatha Christie'  # style of narration for crime scene generation
-        self.verbose = False
+        self.verbose = True
         self.predictorAI = None
         self.id_to_player = {} # dictionary mapping player IDs to a Player name
-
-
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -338,7 +333,7 @@ async def game_end(channel, winner, server):  # end of game message (role reveal
             server.players.pop(key)
 
     await channel.send('*----------------PREDICTORAI SUMMARY----------------*')
-    for idx, message in server.predictorAI.predictions:
+    for idx, message in enumerate(server.predictorAI.predictions):
         await channel.send("Day " + str(idx + 1) + ": " + message)
 
 
@@ -426,6 +421,7 @@ async def daytime(channel, server):
                 return
         else:
             await channel.send('It was a quiet night, without any deaths.')
+            bot_dialog += ["It was a quiet night, without any deaths."]
     await channel.send(
         '*----------------DAY %d 🌞----------------* \nYou have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
 
@@ -469,6 +465,12 @@ async def daytime(channel, server):
         await death(channel, lynch, server, lynch=True)
         if await check_end(channel, server):
             return
+    
+    server.predictorAI.world_facts.append(bot_dialog)
+    server.predictorAI.round_descriptions.append(players_dialog)
+
+    bot_dialog = []
+    players_dialog = []
         
     gpt_prediction = await m_predict_return(server)
     server.predictorAI.predictions.append(gpt_prediction)
@@ -653,13 +655,6 @@ async def nighttime(channel, server):
             server.time = server.settings['limit2'] * 60 - (time.time() - start_time)
         await asyncio.sleep(1)
 
-    global bot_dialog, players_dialog
-    server.predictorAI.world_facts.append(bot_dialog)
-    server.predictorAI.round_descriptions.append(players_dialog)
-
-    bot_dialog = []
-    players_dialog = []
-
     await daytime(channel, server)
 
 
@@ -775,6 +770,8 @@ async def m_start(message, author, server):
 
     predictor = PredictorAI(server.players, server.id_to_player)
     server.predictorAI = predictor
+    server.predictorAI.world_facts.append("Setting: " + setting)
+
 
     if server.settings['daystart']:
         await daytime(message.channel, server)
@@ -1145,8 +1142,6 @@ async def m_predict_return(server):
     names = []
     for player in server.predictorAI.players:
         names.append(server.id_to_player[player])
-    # print("all names:", names)
-    # print("dictionary: id-> Obj", server.predictorAI.players)
     print("Current players:", server.predictorAI.current.values())
     print("World facts:", server.predictorAI.world_facts)
     print("Conversations:", server.predictorAI.round_descriptions)
@@ -1160,7 +1155,7 @@ async def m_predict_return(server):
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are an analyzer who predicts who  the mafia player is after every round until the end of the game. You have access to the following information- Characters: {names}, Deaths:{server.predictorAI.deaths}, facts about the game after every round: {server.predictorAI.world_facts}, and conversations held during each round: {server.predictorAI.round_descriptions}. The array object for world_facts contains arrays containing the bot dialog and other world facts from each round. For each round of the game, there is an element in world_facts that is an array containing dialog from that round. Similarly for round_descriptions, the array object contains player dialog collected in chronological order from each round. For each round of the game there is an element in round_descriptions that is an array containing player dialog from that round. Make a strong prediction on who the mafia player is after every round and explain logically how you came to this conclusion based on the current facts from the rounds before. If any of the variables are missing, please make a prediction based on the information you have. Predict the mafia player.",
+                    "content": f"You are an analyzer who predicts who the mafia player is after every round until the end of the game. You have access to the following information- Characters: {names}, Deaths:{server.predictorAI.deaths}, facts about the game after every round: {server.predictorAI.world_facts}, conversations held during each round: {server.predictorAI.round_descriptions}. At the beginning of the game, the distribution of the players are as follows: {server.setup}. The array object for world_facts contains arrays containing the bot dialog and other world facts from each round. For each round of the game, there is an element in world_facts that is an array containing dialog from that round. Similarly for round_descriptions, the array object contains player dialog collected in chronological order from each round. For each round of the game there is an element in round_descriptions that is an array containing player dialog from that round. Make a strong prediction on who the mafia player is after every round and explain logically how you came to this conclusion based on the current facts from the rounds before. If any of the variables are missing, please make a prediction based on the information you have. Predict the mafia player.",
                 }
             ],
             temperature=1,
@@ -1172,7 +1167,6 @@ async def m_predict_return(server):
 
     except Exception as e:
         print(e)  # For debugging
-            
 
 to_func = {
     'help': m_help,  # DM
@@ -1222,16 +1216,9 @@ async def on_message(message):
         if (
             message.channel.type != discord.ChannelType.private
             and message.author.id not in allPlayers
+            and "placed their vote" in message.content
         ):
             bot_dialog.append((message.author.name, message.content))
-
-    # print(bot_dialog)
-    # print(players_dialog)
-
-    # print("author & id of message:", message.author, message.id)
-    # print("message channel:", message.channel) # General: private
-    # print(message.channel.type) # gen
-
     if message.guild not in servers:
         servers[message.guild] = Server()
 
@@ -1259,29 +1246,13 @@ async def on_message(message):
 
     query = message.content[2:].split()
 
-    # TODO: remove below
-    # just for testing gpt connection
-    # if message.content.startswith("m!testgpt!"):
-    # word = message.content.split("m!testgpt!", 1)[1]  # Extract the word
-    # # print("word:", word)
-    # if word:  # If there's a word provided, generate and send back a joke
-    #     await test_gpt_joke(message, word)
-    # else:
-    #     await message.channel.send(
-    #         "Please provide a word for me to joke about. Use the format m!testgpt!{word}"
-    #     )
-    # return
-    # TODO: remove above
-
     if len(query) and query[0] in commands:
-        # print('Command received: ' + query[0])
         if (
             message.channel.type == discord.ChannelType.private
             and query[0] not in dm_funcs
         ):
             await message.channel.send("This function cannot be used in DMs.")
         else:
-            # print('to_func: ' + query[0])
             func = to_func[query[0]]
             await func(message, message.author.id, servers[message.guild])
     else:
