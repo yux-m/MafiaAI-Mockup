@@ -30,6 +30,8 @@ discord_client = discord.Client(intents=intents)
 
 activity = discord.Game(name="m!help")
 
+total_player_list = []
+
 
 @discord_client.event
 async def on_ready():
@@ -200,6 +202,15 @@ class Server:
         self.verbose = True
         self.predictorAI = None
         self.id_to_player = {} # dictionary mapping player IDs to a Player name
+        self.discord_messages = {} 
+        """
+        round: {[
+            player: message, 
+            player2: message,
+        ]},
+        round2: etc etc
+        """
+        self.personas = ""
 
 
 power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
@@ -211,6 +222,42 @@ allPlayers = {}  # dictionary mapping player IDs to server they're playing in
 
 
 # player removed when m!leave
+
+
+async def compile_personas(server):
+    """
+    This function compiles each player's personas based on the messages they send.
+    option 1: read the independent player messages to form personas
+    -> challenge - sometimes messages dont make sense out of context
+    option 2: (1) pass stream of messages to gpt (2) ask it to form personas of each person (3) return the personas, matched to each character
+    -> challenge - how to match the personas to the characters? maybe use kani?
+
+    TODO: create json of personas and only pass in the relevant characters to narration?
+    """
+    try:
+        print(f"server personas: {server.personas}")
+        # issue: why is this empty?
+        # player_list = [player.name for player in server.players.values()]
+        player_list = total_player_list
+        print(f'player_list = {player_list}')
+        prompt = f'In the voice of a Gen-Z, compile brief and funny personas of each player only from the player list: {player_list} based on their latest conversation: {server.discord_messages}. Build off the current player personas: {server.personas}. Write like you are gen-z'
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="gpt-3.5-turbo",
+        )
+        personas = response.choices[0].message.content
+        print(personas)
+        server.personas = personas
+        # await message.channel.send(personas)
+    except Exception as e:
+        # await message.channel.send("Sorry, I couldn't compile personas right now. Please try again later.")
+        print(e)  # For debugging
+
 
 
 # TODO: remove this test_gpt_joke function (just for testing openai connection)
@@ -243,7 +290,6 @@ async def gpt_query(messages):
         print(e)  # For debugging
         return None
 
-
 async def gpt_query_single(prompt):
     messages = [
         {
@@ -272,6 +318,8 @@ async def dalle_query(prompt):
 
 async def death(channel, player, server, lynch:bool):
     server.players[player].alive = 0
+    await compile_personas(server)
+    print(f"server personas: {server.personas}")
 
     if server.narration:
         # Generate a description of the murder scene using GPT
@@ -286,6 +334,7 @@ async def death(channel, player, server, lynch:bool):
             For our novel style mafia game, describe a mysterious and gruesome murder scene in style of {style}, 
             for a character described as '{description}' with the murder weapon being a {weapon}, 
             found by people upon sunrise. Murderer unknown. Make sure it doesn't conflict with the background: {background}.
+            Be sure to incorporate the personas/characteristics of each player in the story: {server.personas}
             Keep in one paragraph and within 100 words.
             '''
             murder_scene_description = await gpt_query_single(prompt)
@@ -296,20 +345,20 @@ async def death(channel, player, server, lynch:bool):
             else:
                 await channel.send(murder_scene_description)
 
-            # if server.visual:
-            #     image_prompt = f'''
-            #     Comics scene: A mysterious character (X) attacked the character (V) and escaped 
-            #     Way: with {weapon}
-            #     Character X: just a black shadow escaping or leaving, facing away
-            #     Character V: 
-            #     {murder_scene_description}
-            #     Make sure there's no trace of who did this.
-            #     Make sure it doesn't conflict with the background: {background}.
-            #     Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
-            #     '''
-            #     image = await dalle_query(image_prompt)
-            #     if image is not None:
-            #         await channel.send(image)
+            if server.visual:
+                image_prompt = f'''
+                Comics scene: A mysterious character (X) attacked the character (V) and escaped 
+                Way: with {weapon}
+                Character X: just a black shadow escaping or leaving, facing away
+                Character V: 
+                {murder_scene_description}
+                Make sure there's no trace of who did this.
+                Make sure it doesn't conflict with the background: {background}.
+                Mood: The overall mood is tense and mysterious, emphasized by shadows and the detective's serious expression.
+                '''
+                image = await dalle_query(image_prompt)
+                if image is not None:
+                    await channel.send(image)
                         
         else:
             prompt = f"You are a game master for a game of Mafia.\nThe townspeople have lynched a character described as {server.players[player].description}. Write a short tombstone message for the character. Keep it vague and avoid any gruesome details."
@@ -324,10 +373,6 @@ async def death(channel, player, server, lynch:bool):
 
 
 async def game_end(channel, winner, server):  # end of game message (role reveal, congratulation of winners)
-    # flush remaining game state
-    server.predictorAI.world_facts.append(bot_dialog)
-    server.predictorAI.round_descriptions.append(players_dialog)
-    final_prediction = await m_predict_return(server);
     server.running = 0
     await channel.send('\n'.join(
         [end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in
@@ -339,8 +384,7 @@ async def game_end(channel, winner, server):  # end of game message (role reveal
     await channel.send('*----------------PREDICTORAI SUMMARY----------------*')
     for idx, message in enumerate(server.predictorAI.predictions):
         await channel.send("Day " + str(idx + 1) + ": " + message)
-    await channel.send('Final Prediction: ' + final_prediction)
-    
+
 
 async def check_end(channel, server):
     if not sum([player.role == 'mafia' for player in server.players.values() if player.alive]):  # no mafia remaining
@@ -418,7 +462,7 @@ async def daytime(channel, server):
             )
 
             global bot_dialog, players_dialog
-            bot_dialog += ("Player %s has been killed." % server.id_to_player[kill.id])
+            bot_dialog += "Player %s has been killed." % server.id_to_player[kill.id]
             server.predictorAI.current.pop(kill.id)
 
 
@@ -459,7 +503,7 @@ async def daytime(channel, server):
 
     if lynch == None or lynch == discord_client.user.id:
         await channel.send('The townspeople have decided to lynch nobody.')
-        bot_dialog.append(("The townspeople have decided to lynch nobody.".format(server.round)))
+        bot_dialog.append("The townspeople have decided to lynch nobody.".format(server.round))
 
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
@@ -968,6 +1012,12 @@ async def m_join(message, author, server):
         server.players[author] = Player(author, server)
         role = discord.utils.get(message.guild.roles, name='Mafia')
         server.id_to_player[author] = message.author.name
+
+        # adding player to total_player_list
+        player_name = message.author.name
+        server.players[author].name = player_name
+        total_player_list.append(player_name)
+
         await message.author.add_roles(role)
         await message.channel.send('<@%s> has joined the game.' % str(author))
 
@@ -1212,6 +1262,15 @@ async def on_message(message):
 
     # print("                on message running")
     global bot_dialog, players_dialog
+    try:
+        curr_server = servers[message.guild]
+        if not curr_server.round in curr_server.discord_messages:
+            curr_server.discord_messages[curr_server.round] = [{message.author.name: message.content}]
+        else:
+            curr_server.discord_messages[curr_server.round].append({message.author.name: message.content})
+    except Exception as e:
+        print(e) 
+
     if (not message.content.startswith("m!")):
         if (
             message.channel.type != discord.ChannelType.private
